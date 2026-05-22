@@ -1,0 +1,285 @@
+/* Google Fonts is loaded non-blocking via <link> in index.html — see below.
+   Removing the @import here eliminates the render-blocking CSS cascade that
+   was adding 820 ms to the critical path (Lighthouse: Network dependency tree). */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: #F1F5F2;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────── */
+  .btn { @apply inline-flex items-center justify-center font-semibold rounded-xl px-4 py-2 text-sm transition-all duration-200 cursor-pointer; }
+  .btn-primary {
+    @apply btn text-white shadow-sm;
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  }
+  .btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 4px 12px rgb(14 165 233 / 0.35); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.55; transform: none; filter: none; cursor: not-allowed; }
+
+  .btn-secondary { @apply btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300; }
+  .btn-ghost     { @apply btn text-slate-600 hover:bg-slate-100; }
+  .btn-dark      { @apply btn bg-sidebar text-white hover:bg-sidebar-hover; }
+  .btn-danger    { @apply btn bg-red-500 text-white hover:bg-red-600; }
+
+  /* ── Cards ───────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-2xl border border-slate-100 p-5;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  }
+  .card-hover { @apply card transition-all duration-200 cursor-pointer; }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px 0 rgb(0 0 0 / 0.09), 0 2px 6px -1px rgb(0 0 0 / 0.05);
+    border-color: #bae6fd;
+  }
+
+  /* ── Form ────────────────────────────────────────────── */
+  .label  { @apply block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5; }
+  .input  {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900
+           focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-all duration-150;
+  }
+  .input:hover:not(:focus) { @apply border-slate-300; }
+
+  /* ── Badges ──────────────────────────────────────────── */
+  .badge       { @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold; }
+  .badge-green { @apply badge bg-g-100 text-g-700; }
+  .badge-amber { @apply badge bg-amber-100 text-amber-700; }
+  .badge-orange { @apply badge bg-orange-100 text-orange-700; }
+  .badge-red   { @apply badge bg-red-100 text-red-700; }
+  .badge-grey  { @apply badge bg-slate-100 text-slate-600; }
+  .badge-navy  { @apply badge bg-navy-100 text-navy-800; }
+  .badge-blue  { @apply badge bg-blue-100 text-blue-700; }
+
+  /* ── Progress bar ────────────────────────────────────── */
+  .progress-track { @apply w-full h-1.5 bg-slate-100 rounded-full overflow-hidden; }
+  .progress-fill  { @apply h-full rounded-full transition-all duration-700 ease-out; }
+
+  /* ── Section title ───────────────────────────────────── */
+  .section-label { @apply text-[10px] font-bold uppercase tracking-widest text-slate-400; }
+  .section-title { @apply text-sm font-bold text-slate-900 flex items-center gap-2; }
+
+  /* ── Sidebar nav item ────────────────────────────────── */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400
+           transition-all duration-150 cursor-pointer select-none;
+  }
+  .nav-item:hover { @apply bg-sidebar-hover text-white; }
+  .nav-item.active { @apply bg-g-600/20 text-g-400; }
+  .nav-item.active .nav-dot { @apply bg-g-400; }
+
+  /* ── Stat ticker ─────────────────────────────────────── */
+  .ticker-wrap { overflow: hidden; white-space: nowrap; }
+  .ticker-inner { display: inline-block; animation: ticker 40s linear infinite; }
+  .ticker-inner:hover { animation-play-state: paused; }
+
+  /* ── Overlay modal ───────────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center;
+    background: rgba(10, 28, 46, 0.55);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease-out;
+  }
+  .modal-box {
+    @apply bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4;
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
+}
+
+/* ── PDF / Print layout helpers ─────────────────────────────────────────────── */
+/*
+ * Cards and sections are allowed to continue naturally across PDF page
+ * boundaries.  The canvas-based export in pdfCapture.js handles pagination
+ * by slicing a single full-height canvas — CSS page-break rules have no
+ * effect on that process, so none are set here.
+ *
+ * What we DO enforce:
+ *   - overflow visible on everything so html2canvas captures full content
+ *   - text wrapping so no text is truncated
+ *   - exception for decorative bars (.pdf-progress-bar / .pdf-keep-clip)
+ *     which must stay clipped to look correct
+ */
+
+/* Sections: visible overflow so tall cards render fully in the canvas */
+.pdf-section {
+  overflow: visible !important;
+}
+
+/* All descendants inside the PDF capture area */
+#pdf-content * {
+  overflow:     visible !important;
+  max-height:   none    !important;
+  white-space:  normal  !important;
+  text-overflow: clip   !important;
+  min-width: 0;
+}
+
+/* Preserve intentional clipping for decorative progress bars and similar */
+#pdf-content .pdf-progress-bar,
+#pdf-content .pdf-keep-clip {
+  overflow: hidden !important;
+}
+
+/* Ensure grids don't collapse at the forced 794px PDF width */
+#pdf-content .grid {
+  display: grid !important;
+}
+
+/* ── @media print — native browser print fallback ─────────────────────────────
+ *
+ * This rule set fires when the user presses Ctrl/Cmd+P (or uses the browser
+ * menu) directly, bypassing the canvas-capture Print button.  It hides all
+ * navigation chrome and formats the report content for A4.
+ *
+ * The canvas-based printAsPdf() function already produces pixel-perfect A4
+ * output via a separate print window, so these rules are purely a fallback.
+ */
+@media print {
+  /* Force colour rendering in all browsers */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Hide everything that isn't report content */
+  .no-print,
+  nav,
+  aside,
+  header:not(#pdf-content header),
+  [data-sidebar],
+  .sticky {
+    display: none !important;
+  }
+
+  /* Reset page background */
+  html, body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Expand the report content to full page width */
+  #pdf-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  /* Let sections break across pages naturally */
+  .pdf-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* A4 page setup */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+}
+
+/* ── @media print — native browser print fallback ─────────────────────────────
+ *
+ * Fires when the user presses Ctrl/Cmd+P directly.  Hides all navigation
+ * chrome and formats the report content for A4.  The canvas-based printAsPdf()
+ * button already produces pixel-perfect A4 output via a separate print window,
+ * so these rules are purely a safety-net fallback.
+ */
+@media print {
+  /* Force colour rendering in all browsers */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Hide navigation chrome */
+  .no-print,
+  nav,
+  aside,
+  [data-sidebar],
+  .sticky {
+    display: none !important;
+  }
+
+  /* Reset page background */
+  html, body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Expand report content to full page width */
+  #pdf-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  /* Let sections break across pages naturally */
+  .pdf-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* A4 page setup */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+}

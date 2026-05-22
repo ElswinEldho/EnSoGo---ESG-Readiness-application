@@ -1,0 +1,52 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: sam-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: sam_assessment
+    volumes:
+      - mongo_data:/data/db
+    networks: [sam-net]
+
+  backend:
+    build: ./backend
+    container_name: sam-backend
+    restart: unless-stopped
+    depends_on: [mongo]
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGO_URI: mongodb://mongo:27017/sam_assessment
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-env-for-production-256-bit}
+      JWT_EXPIRES_IN: 60m
+      JWT_REMEMBER_EXPIRES_IN: 30d
+      CORS_ORIGIN: http://localhost:5173
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - backend_uploads:/app/uploads
+    networks: [sam-net]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:5000/api
+    container_name: sam-frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "5173:80"
+    networks: [sam-net]
+
+networks:
+  sam-net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  backend_uploads:
