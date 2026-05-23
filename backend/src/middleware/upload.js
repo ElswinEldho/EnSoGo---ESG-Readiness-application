@@ -1,11 +1,11 @@
-// Multer config — stores uploads in env.UPLOAD_DIR with safe filenames.
+// Multer config — stores uploads in UPLOAD_DIR with safe filenames.
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
-const env = require('../config/env');
+const UPLOAD_DIR = require('../config/uploadDir');
 
-fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_MIME = new Set([
   'text/csv',
@@ -21,7 +21,7 @@ const ALLOWED_MIME = new Set([
 const ALLOWED_EXTS = new Set(['.csv', '.txt', '.xlsx', '.xls', '.xlsm', '.pdf', '.jpg', '.jpeg', '.png']);
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, env.UPLOAD_DIR),
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60);

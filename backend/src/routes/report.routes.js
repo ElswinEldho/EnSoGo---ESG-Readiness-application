@@ -5,7 +5,7 @@ const fs = require('fs');
 const { requireAuth }       = require('../middleware/auth');
 const resolveAssessment     = require('../middleware/resolveAssessment');
 const Report                = require('../models/Report');
-const env                   = require('../config/env');
+const UPLOAD_DIR            = require('../config/uploadDir');
 const { generateCalculationSummary, generateReadinessReport } = require('../utils/pdfReport');
 const { refreshSummary, refreshReadiness } = require('../services/assessmentService');
 
@@ -13,7 +13,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 // Ensure upload directory exists before writing any PDF files
-fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 function pdfFileName(orgName, kind) {
   const slug = (orgName || 'Organization').replace(/[^a-zA-Z0-9]+/g, '_');
@@ -23,7 +23,7 @@ function pdfFileName(orgName, kind) {
 
 // Write the PDF buffer to disk, create a Report record, then stream back.
 async function persistAndSend(res, buffer, fileName, assessmentId, type, userId) {
-  const filePath = path.join(env.UPLOAD_DIR, fileName);
+  const filePath = path.join(UPLOAD_DIR, fileName);
   await fs.promises.writeFile(filePath, buffer);
   await Report.create({ user: userId, assessment: assessmentId, type, filePath, fileName });
   res.setHeader('Content-Type', 'application/pdf');

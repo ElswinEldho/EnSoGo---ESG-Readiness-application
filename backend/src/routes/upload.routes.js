@@ -7,7 +7,7 @@ const resolveAssessment     = require('../middleware/resolveAssessment');
 const upload                = require('../middleware/upload');
 const Assessment            = require('../models/Assessment');
 const UploadLog             = require('../models/UploadLog');
-const env                   = require('../config/env');
+const UPLOAD_DIR            = require('../config/uploadDir');
 const { parseFile, parseMonthStrict, parseYearStrict } = require('../utils/fileParser');
 const { UPLOAD_CATEGORIES, MESSAGES } = require('../constants');
 
@@ -23,7 +23,7 @@ async function archivePreviousFiles(assessmentId, category) {
   const old = await UploadLog.find({ assessment: assessmentId, category });
   for (const log of old) {
     if (log.storedName && log.storedName !== '-') {
-      try { fs.unlinkSync(path.join(env.UPLOAD_DIR, log.storedName)); } catch (_e) { /* already gone */ }
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName)); } catch (_e) { /* already gone */ }
     }
   }
   await UploadLog.deleteMany({ assessment: assessmentId, category });
@@ -34,7 +34,7 @@ async function purgeAllLogs(assessmentId, category) {
   const old = await UploadLog.find({ assessment: assessmentId, category });
   for (const log of old) {
     if (log.storedName && log.storedName !== '-') {
-      try { fs.unlinkSync(path.join(env.UPLOAD_DIR, log.storedName)); } catch (_e) { /* ignore */ }
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName)); } catch (_e) { /* ignore */ }
     }
   }
   const r = await UploadLog.deleteMany({ assessment: assessmentId, category });

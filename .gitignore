@@ -1,11 +1,26 @@
 node_modules/
+
+# ── Environment files ─────────────────────────────────────────────────────────
+# The centralised root .env must never be committed — it contains secrets.
+# .env.example IS committed — it documents all required variables safely.
 .env
-.DS_Store
+.env.local
+.env.*.local
+
+# ── Build output ──────────────────────────────────────────────────────────────
 dist/
 build/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
-# Uploaded files — ignore content but track the directory skeleton via .gitkeep
+npm-debug.log*
+
+# ── Uploaded files ────────────────────────────────────────────────────────────
+# Ignore content but track the directory skeleton via .gitkeep
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# ── Editor / OS artefacts ─────────────────────────────────────────────────────
+.DS_Store
 .vscode/
 .idea/

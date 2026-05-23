@@ -1,5 +1,18 @@
 // SAM Assessment Application — Backend entry point.
-// Spins up Express, connects MongoDB, and mounts the route tree.
+// Loads the centralised root .env, spins up Express, connects MongoDB,
+// and mounts the route tree.
+
+// ── Environment ──────────────────────────────────────────────────────────────
+// Must be the very first require so every module that follows sees process.env
+// populated from the root .env file.
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+
+// Warn loudly if the default dev secret reaches production.
+if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET === 'dev-only-change-me') {
+  // eslint-disable-next-line no-console
+  console.warn('[WARN] JWT_SECRET is still set to the development default. Set a strong secret in .env before deploying.');
+}
 
 const express = require('express');
 const helmet = require('helmet');
@@ -7,7 +20,6 @@ const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 
-const env = require('./src/config/env');
 const connectDB = require('./src/config/db');
 
 const authRoutes = require('./src/routes/auth.routes');
@@ -21,10 +33,12 @@ const app = express();
 
 // --- core middleware --------------------------------------------------------
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-if (env.NODE_ENV !== 'test') app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+}
 
 // Global rate-limit — extra protection on auth handled inside the route file.
 app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
@@ -44,9 +58,10 @@ app.use(errorHandler);
 // --- bootstrap --------------------------------------------------------------
 async function start() {
   await connectDB();
-  app.listen(env.PORT, () => {
+  const port = process.env.PORT || 5000;
+  app.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`[sam] backend listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+    console.log(`[sam] backend listening on http://localhost:${port} (${process.env.NODE_ENV || 'development'})`);
   });
 }
 

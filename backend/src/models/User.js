@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const env = require('../config/env');
 const { isValidSector } = require('../data/sectors');
 
 const userSchema = new mongoose.Schema(
@@ -48,7 +47,7 @@ userSchema.virtual('orgProfileComplete').get(function () {
 });
 
 userSchema.methods.setPassword = async function setPassword(plain) {
-  this.passwordHash = await bcrypt.hash(plain, parseInt(env.BCRYPT_COST, 10) || 12);
+  this.passwordHash = await bcrypt.hash(plain, parseInt(process.env.BCRYPT_COST, 10) || 12);
 };
 
 userSchema.methods.verifyPassword = function verifyPassword(plain) {

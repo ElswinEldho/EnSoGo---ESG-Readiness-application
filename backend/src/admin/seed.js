@@ -15,8 +15,9 @@
  *   MONGODB_URI          — MongoDB connection string
  */
 
-// Only load backend/.env — the root .env uses JS syntax and breaks dotenv
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+// Load environment variables from the centralised root .env file.
+// __dirname = backend/src/admin  →  ../../..  = project root
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', '..', '..', '.env') });
 
 const mongoose = require('mongoose');
 const AdminUser = require('./models/AdminUser');

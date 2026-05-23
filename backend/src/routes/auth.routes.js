@@ -10,7 +10,7 @@ const { SECTORS, isValidSector } = require('../data/sectors');
 const { sendResetCode } = require('../utils/mailer');
 const Assessment = require('../models/Assessment');
 const UploadLog = require('../models/UploadLog');
-const envCfg = require('../config/env');
+const UPLOAD_DIR = require('../config/uploadDir');
 
 const router = express.Router();
 
@@ -260,7 +260,7 @@ router.post('/logout', requireAuth, async (req, res, next) => {
       for (const log of logs) {
         if (log.storedName && log.storedName !== '-') {
           try {
-            fs.unlinkSync(path.join(envCfg.UPLOAD_DIR, log.storedName));
+            fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName));
           } catch (_e) { /* already gone — ignore */ }
         }
       }

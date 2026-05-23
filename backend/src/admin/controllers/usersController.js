@@ -9,6 +9,7 @@ const UploadLog = require('../../models/UploadLog');
 const { createAuditEntry } = require('../middleware/adminLogger');
 const fs = require('fs');
 const path = require('path');
+const UPLOAD_DIR = require('../../config/uploadDir');
 
 // GET /api/admin/users — paginated list with search/filter
 async function listUsers(req, res, next) {
@@ -126,7 +127,7 @@ async function deleteUser(req, res, next) {
       for (const log of logs) {
         if (log.storedName && log.storedName !== '-') {
           try {
-            fs.unlinkSync(path.join(process.env.UPLOAD_DIR || 'uploads', log.storedName));
+            fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName));
           } catch (_) { /* already gone */ }
         }
       }

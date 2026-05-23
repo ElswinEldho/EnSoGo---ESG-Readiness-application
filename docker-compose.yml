@@ -18,14 +18,14 @@ services:
     depends_on: [mongo]
     ports:
       - "5000:5000"
+    # Load defaults from the root .env, then override Docker-specific values below.
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
-      PORT: 5000
+      # Use the Docker internal hostname for MongoDB (overrides .env value).
       MONGO_URI: mongodb://mongo:27017/sam_assessment
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-env-for-production-256-bit}
-      JWT_EXPIRES_IN: 60m
-      JWT_REMEMBER_EXPIRES_IN: 30d
-      CORS_ORIGIN: http://localhost:5173
+      # Uploads are stored in a named volume inside the container.
       UPLOAD_DIR: /app/uploads
     volumes:
       - backend_uploads:/app/uploads
@@ -35,7 +35,10 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:5000/api
+        # Read VITE_API_URL from the root .env (via docker-compose variable
+        # interpolation) so the production API URL is baked into the build.
+        # Falls back to localhost if the variable is not set.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
     container_name: sam-frontend
     restart: unless-stopped
     depends_on: [backend]
