@@ -5,12 +5,13 @@
  * Entropy: 32^8 ≈ 1.1 trillion unique IDs; safe against enumeration attacks.
  *
  * The alphabet deliberately excludes visually confusing characters:
- *   0/O, 1/I/L removed → uses: A-H J-N P-Z 2-9
+ *   0/O and 1/I removed → uses: A-Z (except I and O) + 2-9  (32 chars exactly)
  */
 
 const crypto = require('crypto');
 
-const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // 32 chars
+// 32 chars — excludes visually confusing 0/O, 1/I; L kept because 1 and I are already absent
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 chars
 
 /**
  * Generates a new EnSoGo public ID.

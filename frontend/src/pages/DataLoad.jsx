@@ -645,16 +645,38 @@ export default function DataLoad() {
     if (POPUP_ERRORS.has(msg)) setPopup(friendlyPopup(msg)); else setError(msg);
   }
 
+  // Client-side ID format guard — catches any malformed IDs before hitting the API.
+  // IDs like "ENSOGO-undefine" (from the old generator bug) fail here immediately.
+  const ENSOGO_ID_RE = /^ENSOGO-[A-Z2-9]{8}$/;
+
   async function load() {
-    const r = await api.get(`/assessments/${id}`);
-    setDoc(r.data);
-    const u = await api.get(`/uploads/${id}`);
-    setUploads(u.data);
-    // Update upload context: check if any category has records
-    const anyUploaded = CATEGORIES.some(c => (r.data?.records?.[c.key] || []).length > 0);
-    setHasUpload(id, anyUploaded);
+    try {
+      const r = await api.get(`/assessments/${id}`);
+      setDoc(r.data);
+      const u = await api.get(`/uploads/${id}`);
+      setUploads(u.data);
+      // Update upload context: check if any category has records
+      const anyUploaded = CATEGORIES.some(c => (r.data?.records?.[c.key] || []).length > 0);
+      setHasUpload(id, anyUploaded);
+    } catch (err) {
+      // Only handle the initial load (doc not yet set).
+      // Post-upload reloads are handled by the caller's own try/catch.
+      if (!doc) {
+        // Redirect to dashboard — the assessment either doesn't exist or has a bad ID.
+        // Using replace so the broken URL doesn't stay in browser history.
+        nav('/', { replace: true });
+      }
+    }
   }
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    // Validate ID format before even making an API call.
+    // Old assessments created with a buggy generator may have IDs like "ENSOGO-undefine".
+    if (!ENSOGO_ID_RE.test(id)) {
+      nav('/', { replace: true });
+      return;
+    }
+    load();
+  }, [id]);
 
   // Initialise extras from doc on first successful load (don't re-init on re-loads
   // caused by file uploads so the user's in-progress edits are preserved).

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, memo } from 'react';
+import React, { useEffect, useState, useMemo, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -310,6 +310,9 @@ export default function Dashboard() {
   const [busy, setBusy]               = useState(false);
   const [selected, setSelected]       = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  // Ref-based lock: prevents double-clicks that fire before React re-renders
+  // the button as disabled. Unlike state, ref reads are synchronous.
+  const creatingRef = useRef(false);
 
   const [createError, setCreateError] = useState('');
 
@@ -327,12 +330,18 @@ export default function Dashboard() {
   }, [setHasUpload]);
 
   async function createNew() {
+    // Synchronous guard — state updates are async so disabled={busy} alone
+    // cannot block a second click that lands before the first re-render.
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setBusy(true); setCreateError('');
     try {
       const r = await api.post('/assessments');
       nav(`/assessment/${r.data.ensogoId}/data-load`);
+      // Note: nav() unmounts this component, so no need to reset refs on success.
     } catch (err) {
       setCreateError(err.response?.data?.error || 'Could not create assessment. Please check your connection and try again.');
+      creatingRef.current = false;
     } finally { setBusy(false); }
   }
 
