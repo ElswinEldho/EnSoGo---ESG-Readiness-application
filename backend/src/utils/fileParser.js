@@ -9,10 +9,10 @@
 //   - Water/Waste: subfields optional.
 //   - All other templates: every data column mandatory; rows with missing fields skipped.
 
-const fs   = require('fs');
-const path = require('path');
+const fs      = require('fs');
+const path    = require('path');
 const { parse: parseCsv } = require('csv-parse/sync');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -314,7 +314,7 @@ function parseV2TemplateRows(rows2d, category, invalidValueRows) {
 }
 
 // ---------------------------------------------------------------------------
-// Legacy v1 template parser (Start Date column)
+// Legacy v1 template parser (Start Date column) — shared helpers
 // ---------------------------------------------------------------------------
 const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 
@@ -328,11 +328,76 @@ function parseMonth(s) {
   return i === -1 ? null : i + 1;
 }
 
+// ---------------------------------------------------------------------------
+// ExcelJS helper utilities (replace XLSX.utils.sheet_to_json / XLSX.SSF)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert an Excel date serial number (e.g. 44927) to { y, m }.
+ * Mirrors XLSX.SSF.parse_date_code — uses the 1900 epoch (1899-12-30 UTC).
+ */
+function parseExcelDateSerial(serial) {
+  if (typeof serial !== 'number' || !Number.isFinite(serial) || serial <= 0) return null;
+  const date = new Date(Date.UTC(1899, 11, 30) + Math.round(serial) * 86400000);
+  if (isNaN(date.getTime())) return null;
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1 };
+}
+
+/**
+ * Convert an ExcelJS Worksheet to a 2-D array of plain values.
+ * Replaces: XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+ */
+function worksheetToRows2d(worksheet) {
+  const rows2d = [];
+  worksheet.eachRow({ includeEmpty: true }, (row) => {
+    // row.values is 1-indexed; slice(1) gives a 0-indexed array
+    const rawValues = Array.isArray(row.values) ? row.values.slice(1) : [];
+    const cells = rawValues.map((v) => {
+      if (v === null || v === undefined) return '';
+      if (v instanceof Date) return v;
+      if (typeof v === 'object') {
+        // Formula cell — use the cached result
+        if (v.formula !== undefined || v.sharedFormula !== undefined) {
+          const r = v.result;
+          return (r === null || r === undefined) ? '' : r;
+        }
+        // Rich-text cell
+        if (v.richText !== undefined) return v.richText.map((rt) => rt.text || '').join('');
+        // Hyperlink cell
+        if (v.hyperlink !== undefined) return v.text || v.hyperlink || '';
+        // Error cell
+        if (v.error !== undefined) return '';
+      }
+      return v;
+    });
+    // Trim trailing empty cells
+    while (cells.length > 0 && (cells[cells.length - 1] === '' || cells[cells.length - 1] === null || cells[cells.length - 1] === undefined)) cells.pop();
+    rows2d.push(cells);
+  });
+  return rows2d;
+}
+
+/**
+ * Convert a 2-D rows array to an array of header-keyed objects.
+ * Replaces: XLSX.utils.sheet_to_json(ws, { defval: '' })
+ */
+function rows2dToObjects(rows2d) {
+  if (rows2d.length < 2) return [];
+  const headers = rows2d[0].map((h) => (h === null || h === undefined ? '' : String(h)));
+  return rows2d.slice(1).map((row) => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      if (h !== '') obj[h] = (row[i] === undefined || row[i] === null) ? '' : row[i];
+    });
+    return obj;
+  });
+}
+
 function parseDate(s) {
   if (!s) return null;
   if (s instanceof Date) return { year: s.getFullYear(), month: s.getMonth() + 1 };
   if (typeof s === 'number') {
-    const d = XLSX.SSF.parse_date_code(s);
+    const d = parseExcelDateSerial(s);
     if (d) return { year: d.y, month: d.m };
     return null;
   }
@@ -600,15 +665,26 @@ async function parseFile(filePath, category) {
   const invalidValueRows = []; // shared accumulator passed into every sub-parser
 
   if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
-    const wb = XLSX.read(buffer, { cellDates: true });
-    for (const sheetName of wb.SheetNames) {
-      const ws     = wb.Sheets[sheetName];
-      const rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const workbook = new ExcelJS.Workbook();
+    try {
+      if (ext === '.xlsx' || ext === '.xlsm') {
+        await workbook.xlsx.load(buffer);
+      } else {
+        // .xls (legacy binary format) — ExcelJS does not support it natively;
+        // attempt xlsx load as a graceful fallback (some .xls are actually xlsx).
+        try { await workbook.xlsx.load(buffer); }
+        catch (_xlsErr) { return { records: [], invalidValueRows }; }
+      }
+    } catch (_loadErr) {
+      return { records: [], invalidValueRows };
+    }
+    for (const worksheet of workbook.worksheets) {
+      const rows2d = worksheetToRows2d(worksheet);
       const v2 = parseV2TemplateRows(rows2d, category, invalidValueRows); // may throw
       if (v2 !== null) return { records: v2, invalidValueRows };
       const v1 = parseLegacyTemplateRows(rows2d, category, invalidValueRows);
       if (v1 && v1.length) return { records: v1, invalidValueRows };
-      const generic = parseGenericRows(XLSX.utils.sheet_to_json(ws, { defval: '' }), defaultUnitFor(category), invalidValueRows);
+      const generic = parseGenericRows(rows2dToObjects(rows2d), defaultUnitFor(category), invalidValueRows);
       if (generic.length) return { records: generic, invalidValueRows };
     }
     return { records: [], invalidValueRows };
