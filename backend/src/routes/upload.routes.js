@@ -4,12 +4,13 @@ const path    = require('path');
 
 const { requireAuth }       = require('../middleware/auth');
 const resolveAssessment     = require('../middleware/resolveAssessment');
-const upload                = require('../middleware/upload');
+const upload                = require('../utils/upload');
 const Assessment            = require('../models/Assessment');
 const UploadLog             = require('../models/UploadLog');
 const UPLOAD_DIR            = require('../config/uploadDir');
 const { parseFile, parseMonthStrict, parseYearStrict } = require('../utils/fileParser');
-const { UPLOAD_CATEGORIES, MESSAGES } = require('../constants');
+const { deleteUploadFiles }                            = require('../utils/fileUtils');
+const { UPLOAD_CATEGORIES, MESSAGES }                  = require('../constants');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -18,27 +19,55 @@ const ALLOWED_CATEGORIES = UPLOAD_CATEGORIES;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-// Hard-delete logs + physical files for one category (used on replace and on clear).
-async function archivePreviousFiles(assessmentId, category) {
-  const old = await UploadLog.find({ assessment: assessmentId, category });
-  for (const log of old) {
-    if (log.storedName && log.storedName !== '-') {
-      try { fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName)); } catch (_e) { /* already gone */ }
-    }
-  }
-  await UploadLog.deleteMany({ assessment: assessmentId, category });
+// Hard-delete physical files + UploadLog documents for one category.
+// Used on both file replace (upload) and explicit clear (delete) operations.
+// Returns the number of log entries removed.
+async function purgeUploadLogs(assessmentId, category) {
+  const logs = await UploadLog.find({ assessment: assessmentId, category }).lean();
+  deleteUploadFiles(logs, UPLOAD_DIR);
+  const { deletedCount } = await UploadLog.deleteMany({ assessment: assessmentId, category });
+  return deletedCount;
 }
 
-// Alias used by explicit clear operations — same behaviour.
-async function purgeAllLogs(assessmentId, category) {
-  const old = await UploadLog.find({ assessment: assessmentId, category });
-  for (const log of old) {
-    if (log.storedName && log.storedName !== '-') {
-      try { fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName)); } catch (_e) { /* ignore */ }
+// Validate raw manual-entry rows using the same strict rules as file upload.
+// Returns { cleaned, hasInvalidMonth, hasInvalidYear, hasInvalidValue }.
+function validateManualRows(rawRows) {
+  let hasInvalidMonth = false;
+  let hasInvalidYear  = false;
+  let hasInvalidValue = false;
+  const cleaned = [];
+
+  for (const r of rawRows) {
+    // Month: accept string name or numeric 1-12
+    let monthNum;
+    if (typeof r.month === 'string') {
+      const mr = parseMonthStrict(r.month);
+      if (mr.invalid) { hasInvalidMonth = true; continue; }
+      if (mr.value === null) continue;
+      monthNum = mr.value;
+    } else if (Number.isInteger(r.month) && r.month >= 1 && r.month <= 12) {
+      monthNum = r.month;
+    } else { continue; }
+
+    // Year: must be a 4-digit integer
+    let yearNum;
+    if (typeof r.year === 'string') {
+      const yr = parseYearStrict(r.year);
+      if (yr.invalid) { hasInvalidYear = true; continue; }
+      if (yr.value === null) continue;
+      yearNum = yr.value;
+    } else if (Number.isInteger(r.year) && r.year >= 1000 && r.year <= 9999) {
+      yearNum = r.year;
+    } else { hasInvalidYear = true; continue; }
+
+    // Value: must be a finite number — null (JSON-serialised NaN) or non-finite = invalid
+    if (r.value === null || r.value === undefined || !Number.isFinite(Number(r.value))) {
+      hasInvalidValue = true; continue;
     }
+    cleaned.push({ month: monthNum, year: yearNum, value: Number(r.value) });
   }
-  const r = await UploadLog.deleteMany({ assessment: assessmentId, category });
-  return r.deletedCount;
+
+  return { cleaned, hasInvalidMonth, hasInvalidYear, hasInvalidValue };
 }
 
 // Consolidate duplicate (year, month) entries by summing their values.
@@ -101,9 +130,9 @@ router.post('/:assessmentId/:category', resolveAssessment('assessmentId'), uploa
     const consolidated = consolidateDuplicates(records);
     const previousMonths = (assessment.records?.[category] || []).length;
 
-    // Archive old files first, then atomically replace records via $set
+    // Purge old files first, then atomically replace records via $set
     // to avoid Mongoose change-tracking issues with nested arrays.
-    await archivePreviousFiles(assessment._id, category);
+    await purgeUploadLogs(assessment._id, category);
     await Assessment.findOneAndUpdate(
       { _id: assessment._id },
       { $set: { [`records.${category}`]: consolidated } },
@@ -135,43 +164,7 @@ router.post('/:assessmentId/:category/manual', resolveAssessment('assessmentId')
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
 
     const rawRows = Array.isArray(req.body.rows) ? req.body.rows : [];
-
-    // Validate each row's month, year, and value using the same strict rules as file upload.
-    // value must be a finite number — reject the whole request if any provided value is not.
-    let hasInvalidMonth = false;
-    let hasInvalidYear  = false;
-    let hasInvalidValue = false;
-    const cleaned = [];
-
-    for (const r of rawRows) {
-      // Month: accept string name or numeric 1-12
-      let monthNum;
-      if (typeof r.month === 'string') {
-        const mr = parseMonthStrict(r.month);
-        if (mr.invalid) { hasInvalidMonth = true; continue; }
-        if (mr.value === null) continue;
-        monthNum = mr.value;
-      } else if (Number.isInteger(r.month) && r.month >= 1 && r.month <= 12) {
-        monthNum = r.month;
-      } else { continue; }
-
-      // Year: must be 4-digit integer
-      let yearNum;
-      if (typeof r.year === 'string') {
-        const yr = parseYearStrict(r.year);
-        if (yr.invalid) { hasInvalidYear = true; continue; }
-        if (yr.value === null) continue;
-        yearNum = yr.value;
-      } else if (Number.isInteger(r.year) && r.year >= 1000 && r.year <= 9999) {
-        yearNum = r.year;
-      } else { hasInvalidYear = true; continue; }
-
-      // Value: must be a finite number — null (JSON-serialised NaN) or non-finite = invalid
-      if (r.value === null || r.value === undefined || !Number.isFinite(Number(r.value))) {
-        hasInvalidValue = true; continue;
-      }
-      cleaned.push({ month: monthNum, year: yearNum, value: Number(r.value) });
-    }
+    const { cleaned, hasInvalidMonth, hasInvalidYear, hasInvalidValue } = validateManualRows(rawRows);
 
     if (hasInvalidValue)
       return res.status(400).json({ error: 'Invalid data entered' });
@@ -191,8 +184,8 @@ router.post('/:assessmentId/:category/manual', resolveAssessment('assessmentId')
     const consolidated = consolidateDuplicates(cleaned);
     const previousMonths = (assessment.records?.[category] || []).length;
 
-    // Archive old logs, then atomically replace records via $set.
-    await archivePreviousFiles(assessment._id, category);
+    // Purge old logs, then atomically replace records via $set.
+    await purgeUploadLogs(assessment._id, category);
     await Assessment.findOneAndUpdate(
       { _id: assessment._id },
       { $set: { [`records.${category}`]: consolidated } },
@@ -217,7 +210,7 @@ router.delete('/:assessmentId', resolveAssessment('assessmentId'), async (req, r
     const clearSet = {};
     for (const cat of ALLOWED_CATEGORIES) {
       clearSet[`records.${cat}`] = [];
-      totalPurged += await purgeAllLogs(assessment._id, cat);
+      totalPurged += await purgeUploadLogs(assessment._id, cat);
     }
     await Assessment.findOneAndUpdate(
       { _id: assessment._id },
@@ -236,7 +229,7 @@ router.delete('/:assessmentId/:category', resolveAssessment('assessmentId'), asy
       return res.status(400).json({ error: MESSAGES.CATEGORY_UNKNOWN(category) });
 
     const assessment = req.assessment;
-    const purgedLogs = await purgeAllLogs(assessment._id, category);
+    const purgedLogs = await purgeUploadLogs(assessment._id, category);
     await Assessment.findOneAndUpdate(
       { _id: assessment._id },
       { $set: { [`records.${category}`]: [] } },

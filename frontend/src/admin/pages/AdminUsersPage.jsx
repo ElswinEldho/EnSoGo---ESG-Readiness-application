@@ -10,6 +10,7 @@ import AdminBadge from '../components/AdminBadge';
 import ConfirmModal from '../components/ConfirmModal';
 import { useDarkMode } from '../components/AdminLayout';
 import { useToast } from '../components/AdminToast';
+import { formatDate } from '../../constants/index.js';
 
 const ROLES = ['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'AUDITOR', 'SUPPORT'];
 const PWD_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
@@ -102,8 +103,8 @@ export default function AdminUsersPage() {
     { key: 'isActive', label: 'Active', width: '80px', render: (v) => (
       <span style={{ color: v ? '#22c55e' : '#ef4444', fontSize: '12px', fontWeight: 600 }}>{v ? 'Yes' : 'No'}</span>
     )},
-    { key: 'lastLoginAt', label: 'Last Login', width: '120px', render: (v) => v ? new Date(v).toLocaleDateString() : 'Never' },
-    { key: 'createdAt', label: 'Created', width: '110px', render: (v) => v ? new Date(v).toLocaleDateString() : '—' },
+    { key: 'lastLoginAt', label: 'Last Login', width: '120px', render: (v) => v ? formatDate(v) : 'Never' },
+    { key: 'createdAt', label: 'Created', width: '110px', render: (v) => formatDate(v) },
     { key: '_actions', label: 'Actions', width: '80px', render: (_, row) => (
       row._id === currentAdmin?._id ? (
         <span style={{ fontSize: '11px', color: subColor }}>Current</span>

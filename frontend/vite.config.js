@@ -1,95 +1,113 @@
 import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
+import react        from '@vitejs/plugin-react';
 import { fileURLToPath } from 'url';
-import path from 'path';
+import path         from 'path';
+import { generateHtml } from './appShell.js';
 
 // Resolve the project root (one directory above frontend/).
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname    = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
+// ── No-HTML plugin ────────────────────────────────────────────────────────────
+// Eliminates index.html entirely. The entry point is src/main.jsx (pure JS).
+// HTML is generated at runtime from appShell.js — never from a static file.
+//
+//   Dev (`npm run dev` / `npm run dev:vite`)
+//     configureServer returns a "post" middleware that catches every
+//     navigation request after Vite's own asset/transform stack, generates
+//     the HTML shell via generateHtml(), runs it through
+//     server.transformIndexHtml() so Vite can inject its HMR client and
+//     React-refresh preamble, then streams it to the browser.
+//
+//   Build (`npm run build`)
+//     Rollup input is src/main.jsx — no HTML needed.
+//     generateBundle() fires after all chunks/assets are emitted; it reads
+//     the actual hashed filenames from the bundle, replaces the dev script
+//     tag in the generated HTML with production <link> + <script> tags, and
+//     emits dist/index.html as a Rollup asset.  No source index.html required.
+//
+function noIndexHtmlPlugin() {
+  return {
+    name: 'no-index-html',
+
+    configureServer(server) {
+      return () => {
+        server.middlewares.use(async (req, res, next) => {
+          try {
+            let html = generateHtml();
+            html = await server.transformIndexHtml(req.url ?? '/', html);
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(html);
+          } catch (err) {
+            next(err);
+          }
+        });
+      };
+    },
+
+    generateBundle(_, bundle) {
+      const entryChunks = Object.values(bundle).filter((c) => c.isEntry);
+      const cssAssets   = Object.values(bundle).filter(
+        (c) => c.type === 'asset' && c.fileName.endsWith('.css'),
+      );
+
+      const linkTags   = cssAssets
+        .map((c) => `<link rel="stylesheet" href="/${c.fileName}"/>`)
+        .join('');
+      const scriptTags = entryChunks
+        .map((c) => `<script type="module" src="/${c.fileName}"></script>`)
+        .join('');
+      const prodTags   = linkTags + scriptTags;
+
+      const html = generateHtml().replace(
+        '<script type="module" src="/src/main.jsx"></script>',
+        prodTags,
+      );
+
+      this.emitFile({ type: 'asset', fileName: 'index.html', source: html });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
-  // Load all variables from the root .env so the vite config itself
-  // (Node.js context) can reference them — e.g. for the dev-server proxy.
-  // Only variables with the VITE_ prefix are forwarded to the browser bundle.
   const env = loadEnv(mode, PROJECT_ROOT, '');
 
   return {
-    plugins: [react()],
+    plugins: [react(), noIndexHtmlPlugin()],
 
-    // Tell Vite where to find .env files — project root instead of frontend/.
+    appType: 'custom',
+
     envDir: PROJECT_ROOT,
 
     build: {
-      // ── Minification ──────────────────────────────────────────────────────
-      // esbuild is Vite's built-in minifier: strips whitespace, renames locals,
-      // removes dead code.  No extra npm package required.
       minify: 'esbuild',
-
-      // Minify CSS (collapses rules, removes comments, shortens values)
       cssMinify: true,
-
-      // Drop source maps in production — reduces payload by ~30-50 %
       sourcemap: false,
-
-      // es2020: supports optional chaining, nullish coalescing, BigInt natively —
-      // enables more aggressive minification and smaller output than es2015.
-      // Supported by >95% of browsers (Chrome 80+, Firefox 74+, Safari 13.1+).
       target: 'es2020',
-
-      // Skip the gzip/brotli size report shown after every build — saves ~500 ms
-      // per build on large bundles. Actual compressed sizes are unchanged.
       reportCompressedSize: false,
-
-      // Inline SVG/image assets smaller than 4 KB into the JS bundle as data URIs,
-      // eliminating extra HTTP round-trips for tiny assets.
       assetsInlineLimit: 4096,
 
-      // ── Code splitting (reduces unused-JS) ────────────────────────────────
       rollupOptions: {
+        input: path.resolve(__dirname, 'src/main.jsx'),
+
         output: {
-          // Split vendor libraries into separate cached chunks so app-code
-          // changes do not bust the large library caches.
           manualChunks(id) {
             if (!id.includes('node_modules')) return;
-
-            // Recharts + its D3 sub-packages → one charts chunk
-            if (
-              id.includes('/recharts/') ||
-              id.includes('/d3-') ||
-              id.includes('/victory-')
-            ) {
+            if (id.includes('/recharts/') || id.includes('/d3-') || id.includes('/victory-'))
               return 'charts';
-            }
-
-            // React core + DOM → react-vendor chunk
-            if (
-              id.includes('/react-dom/') ||
-              id.includes('/react/') ||
-              id.includes('/scheduler/')
-            ) {
+            if (id.includes('/react-dom/') || id.includes('/react/') || id.includes('/scheduler/'))
               return 'react-vendor';
-            }
-
-            // React Router + Remix internals → router chunk
-            if (
-              id.includes('/react-router') ||
-              id.includes('/@remix-run/')
-            ) {
+            if (id.includes('/react-router') || id.includes('/@remix-run/'))
               return 'router';
-            }
-
-            // Everything else (axios, etc.) → vendor chunk
             return 'vendor';
           },
 
-          // Use content-hash filenames so assets can be cached for a full year
-          chunkFileNames:  'assets/[name]-[hash].js',
-          entryFileNames:  'assets/[name]-[hash].js',
-          assetFileNames:  'assets/[name]-[hash][extname]',
+          chunkFileNames: 'assets/[name]-[hash].js',
+          entryFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash][extname]',
         },
       },
 
-      // Raise warning threshold — individual page chunks may be ~400 kB before gz
       chunkSizeWarningLimit: 1000,
     },
 
@@ -98,12 +116,6 @@ export default defineConfig(({ mode }) => {
       host: true,
       proxy: {
         '/api': {
-          // The proxy target must be ONLY the origin (scheme + host + port).
-          // VITE_API_URL may include a path (e.g. "http://localhost:5000/api"),
-          // but Vite's http-proxy prepends that path to every request, which
-          // would double the /api prefix → "http://localhost:5000/api/api/...".
-          // We extract just the origin so the proxy always receives the full
-          // unmodified request path as-is.
           target: (() => {
             try { return new URL(env.VITE_API_URL || 'http://localhost:5000').origin; }
             catch { return 'http://localhost:5000'; }

@@ -1,38 +1,42 @@
-const express = require('express');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+'use strict';
+const express   = require('express');
+const crypto    = require('crypto');
 const rateLimit = require('express-rate-limit');
 
-const User = require('../models/User');
-const { issueToken } = require('../middleware/auth');
-const { SECTORS, isValidSector } = require('../data/sectors');
-const { sendResetCode } = require('../utils/mailer');
+const User       = require('../models/User');
 const Assessment = require('../models/Assessment');
-const UploadLog = require('../models/UploadLog');
+const UploadLog  = require('../models/UploadLog');
 const UPLOAD_DIR = require('../config/uploadDir');
+const { issueToken, requireAuth }             = require('../middleware/auth');
+const { deleteUploadFiles }                   = require('../utils/fileUtils');
+const { SECTORS, isValidSector }              = require('../data/sectors');
+const { sendResetCode }                       = require('../utils/mailer');
+const { VALIDATION, MESSAGES, RATE_LIMITS, SECURITY } = require('../constants');
 
 const router = express.Router();
 
-// Stricter limits on auth endpoints
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const authLimiter = rateLimit({
+  windowMs:       RATE_LIMITS.AUTH_WINDOW_MS,
+  max:            RATE_LIMITS.AUTH_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders:  false,
+});
 router.use(authLimiter);
 
 // ── helpers ────────────────────────────────────────────────────────────────
-const PWD_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const { PASSWORD_RE, EMAIL_RE } = VALIDATION;
 
 function validateRegistration(body) {
   const errors = {};
-  if (!body.fullName || body.fullName.trim().length < 2) errors.fullName = 'Full name is required (min 2 chars).';
-  if (!body.email || !EMAIL_RE.test(body.email)) errors.email = 'Valid email is required.';
-  if (!body.password || !PWD_RE.test(body.password)) errors.password = 'Password must be ≥ 8 chars with 1 uppercase, 1 number, 1 symbol.';
-  if (body.password !== body.confirmPassword) errors.confirmPassword = 'Passwords do not match.';
+  if (!body.fullName || body.fullName.trim().length < 2)                errors.fullName         = 'Full name is required (min 2 chars).';
+  if (!body.email || !EMAIL_RE.test(body.email))                        errors.email            = 'Valid email is required.';
+  if (!body.password || !PASSWORD_RE.test(body.password))               errors.password         = MESSAGES.INVALID_PASSWORD;
+  if (body.password !== body.confirmPassword)                           errors.confirmPassword  = MESSAGES.PASSWORDS_NO_MATCH;
   if (!body.organizationName || body.organizationName.trim().length < 2) errors.organizationName = 'Organization name is required.';
-  if (!body.sectorCode || !isValidSector(body.sectorCode)) errors.sectorCode = 'Choose a sector.';
-  if (!body.country) errors.country = 'Country is required.';
-  if (!body.stateRegion) errors.stateRegion = 'State / region is required.';
-  if (!body.termsAccepted) errors.termsAccepted = 'You must accept the terms.';
+  if (!body.sectorCode || !isValidSector(body.sectorCode))              errors.sectorCode       = 'Choose a sector.';
+  if (!body.country)                                                    errors.country          = 'Country is required.';
+  if (!body.stateRegion)                                                errors.stateRegion      = 'State / region is required.';
+  if (!body.termsAccepted)                                              errors.termsAccepted    = 'You must accept the terms.';
   return errors;
 }
 
@@ -52,23 +56,23 @@ router.get('/sectors', (_req, res) => {
 router.post('/register', async (req, res, next) => {
   try {
     const errors = validateRegistration(req.body);
-    if (Object.keys(errors).length) return res.status(400).json({ error: 'Validation failed', fields: errors });
+    if (Object.keys(errors).length) return res.status(400).json({ error: MESSAGES.VALIDATION_FAILED, fields: errors });
 
     const existing = await User.findOne({ email: req.body.email.toLowerCase() });
-    if (existing) return res.status(409).json({ error: 'An account with this email already exists. Please log in or use a different email.' });
+    if (existing) return res.status(409).json({ error: MESSAGES.EMAIL_EXISTS });
 
     const verificationToken = crypto.randomBytes(20).toString('hex');
     const user = new User({
-      fullName: req.body.fullName.trim(),
-      email: req.body.email.toLowerCase().trim(),
-      organizationName: req.body.organizationName.trim(),
-      sectorCode: req.body.sectorCode.toUpperCase(),
-      country: req.body.country,
-      stateRegion: req.body.stateRegion,
-      listed: !!req.body.listed,
-      termsAccepted: true,
+      fullName:          req.body.fullName.trim(),
+      email:             req.body.email.toLowerCase().trim(),
+      organizationName:  req.body.organizationName.trim(),
+      sectorCode:        req.body.sectorCode.toUpperCase(),
+      country:           req.body.country,
+      stateRegion:       req.body.stateRegion,
+      listed:            !!req.body.listed,
+      termsAccepted:     true,
       verificationToken,
-      verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      verificationExpiresAt: new Date(Date.now() + SECURITY.VERIFICATION_EXPIRY_MS),
       // For this MVP we auto-activate so the demo flow works end-to-end.
       // In production, set this to 'PendingVerification' and email the link.
       accountStatus: 'Active',
@@ -99,27 +103,27 @@ router.get('/verify/:token', async (req, res, next) => {
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password, remember } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    if (!email || !password) return res.status(400).json({ error: MESSAGES.EMAIL_REQUIRED });
 
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.status(401).json({ error: 'No account found with this email address.' });
+    if (!user) return res.status(401).json({ error: MESSAGES.ACCOUNT_NOT_FOUND });
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      return res.status(423).json({ error: 'Account locked. Please try again later.' });
+      return res.status(423).json({ error: MESSAGES.ACCOUNT_LOCKED });
     }
     if (user.accountStatus !== 'Active') {
-      return res.status(403).json({ error: 'Please verify your email before logging in.' });
+      return res.status(403).json({ error: MESSAGES.ACCOUNT_INACTIVE });
     }
 
     const ok = await user.verifyPassword(password);
     if (!ok) {
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      if (user.failedLoginAttempts >= 5) {
-        user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      if (user.failedLoginAttempts >= RATE_LIMITS.MAX_FAILED_LOGINS) {
+        user.lockedUntil = new Date(Date.now() + RATE_LIMITS.LOCK_DURATION_MS);
         user.failedLoginAttempts = 0;
       }
       await user.save();
-      return res.status(401).json({ error: 'Incorrect password.' });
+      return res.status(401).json({ error: MESSAGES.INCORRECT_PASSWORD });
     }
 
     user.failedLoginAttempts = 0;
@@ -146,7 +150,7 @@ async function handleForgot(req, res, next) {
   try {
     const { email } = req.body;
     if (!email || !EMAIL_RE.test(email)) {
-      return res.status(400).json({ error: 'Please enter a valid email address.' });
+      return res.status(400).json({ error: MESSAGES.INVALID_EMAIL });
     }
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
@@ -156,7 +160,7 @@ async function handleForgot(req, res, next) {
 
     const code = generate6DigitCode();
     user.passwordResetToken = code;
-    user.passwordResetExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    user.passwordResetExpiresAt = new Date(Date.now() + SECURITY.RESET_CODE_EXPIRY_MS);
     await user.save();
 
     // Send the email. If SMTP isn't configured we use an Ethereal test inbox
@@ -188,8 +192,8 @@ router.post('/verify-code', async (req, res, next) => {
     const { email, code } = req.body;
     if (!email || !code) return res.status(400).json({ error: 'Email and code are required.' });
     const user = await User.findOne({
-      email: email.toLowerCase(),
-      passwordResetToken: String(code).trim(),
+      email:                  email.toLowerCase(),
+      passwordResetToken:     String(code).trim(),
       passwordResetExpiresAt: { $gt: new Date() },
     });
     if (!user) return res.status(400).json({ error: 'Invalid or expired code.' });
@@ -208,14 +212,14 @@ router.post('/verify-code', async (req, res, next) => {
 router.post('/reset', async (req, res, next) => {
   try {
     const { email, code, resetTicket, newPassword } = req.body;
-    if (!PWD_RE.test(newPassword || '')) {
-      return res.status(400).json({ error: 'Password must be ≥ 8 chars with 1 uppercase, 1 number, 1 symbol.' });
+    if (!PASSWORD_RE.test(newPassword || '')) {
+      return res.status(400).json({ error: MESSAGES.INVALID_PASSWORD });
     }
     if (!email || !code) return res.status(400).json({ error: 'Email and code are required.' });
 
     const user = await User.findOne({
-      email: email.toLowerCase(),
-      passwordResetToken: String(code).trim(),
+      email:                  email.toLowerCase(),
+      passwordResetToken:     String(code).trim(),
       passwordResetExpiresAt: { $gt: new Date() },
     });
     if (!user) return res.status(400).json({ error: 'Code expired or invalid. Please request a new one.' });
@@ -238,7 +242,6 @@ router.post('/reset', async (req, res, next) => {
 });
 
 // ── Logout ──────────────────────────────────────────────────────────────────
-const { requireAuth } = require('../middleware/auth');
 
 // POST /api/auth/logout
 // Cleans up ephemeral upload artefacts (UploadLog documents + physical XLSX/CSV
@@ -255,16 +258,9 @@ router.post('/logout', requireAuth, async (req, res, next) => {
     const assessmentIds = assessments.map((a) => a._id);
 
     if (assessmentIds.length > 0) {
-      // Delete physical upload files from disk.
+      // Delete physical upload files from disk and remove all UploadLog documents.
       const logs = await UploadLog.find({ assessment: { $in: assessmentIds } }).lean();
-      for (const log of logs) {
-        if (log.storedName && log.storedName !== '-') {
-          try {
-            fs.unlinkSync(path.join(UPLOAD_DIR, log.storedName));
-          } catch (_e) { /* already gone — ignore */ }
-        }
-      }
-      // Remove all UploadLog documents for this user's assessments.
+      deleteUploadFiles(logs, UPLOAD_DIR);
       await UploadLog.deleteMany({ assessment: { $in: assessmentIds } });
     }
 
@@ -288,15 +284,15 @@ router.put('/me/org-profile', requireAuth, async (req, res, next) => {
   try {
     const p = req.body || {};
     const fields = ['builtUpAreaSqft', 'employees', 'avgDailyOccupancy', 'operatingHoursPerDay', 'numberOfFloors', 'yearEstablished'];
-    const next = { ...(req.user.orgProfile?.toObject?.() || req.user.orgProfile || {}) };
+    const updated = { ...(req.user.orgProfile?.toObject?.() || req.user.orgProfile || {}) };
     for (const f of fields) {
-      if (p[f] !== undefined && p[f] !== null && p[f] !== '') next[f] = Number(p[f]);
+      if (p[f] !== undefined && p[f] !== null && p[f] !== '') updated[f] = Number(p[f]);
     }
-    if (!Number.isFinite(next.builtUpAreaSqft) || next.builtUpAreaSqft <= 0) return res.status(400).json({ error: 'Built-up area (sqft) is required and must be > 0.' });
-    if (!Number.isFinite(next.employees) || next.employees < 0) return res.status(400).json({ error: 'Number of employees is required.' });
-    if (!Number.isFinite(next.operatingHoursPerDay) || next.operatingHoursPerDay <= 0) return res.status(400).json({ error: 'Operating hours per day is required.' });
-    next.completedAt = new Date();
-    req.user.orgProfile = next;
+    if (!Number.isFinite(updated.builtUpAreaSqft) || updated.builtUpAreaSqft <= 0) return res.status(400).json({ error: 'Built-up area (sqft) is required and must be > 0.' });
+    if (!Number.isFinite(updated.employees) || updated.employees < 0)              return res.status(400).json({ error: 'Number of employees is required.' });
+    if (!Number.isFinite(updated.operatingHoursPerDay) || updated.operatingHoursPerDay <= 0) return res.status(400).json({ error: 'Operating hours per day is required.' });
+    updated.completedAt = new Date();
+    req.user.orgProfile = updated;
     await req.user.save();
     const u = req.user.toJSON();
     u.orgProfileComplete = req.user.orgProfileComplete;

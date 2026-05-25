@@ -11,6 +11,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { useDarkMode } from '../components/AdminLayout';
 import { useToast } from '../components/AdminToast';
 import { sectorName } from '../../lib/sectors.js';
+import { formatDate } from '../../constants/index.js';
 
 function Btn({ children, onClick, variant = 'default', disabled }) {
   const { dark } = useDarkMode();
@@ -99,8 +100,8 @@ export default function UsersPage() {
     { key: 'organizationName', label: 'Organization' },
     { key: 'sectorCode', label: 'Sector', render: (v) => sectorName(v) },
     { key: 'accountStatus', label: 'Status', width: '130px', render: (v) => <AdminBadge value={v} dark={dark} /> },
-    { key: 'createdAt', label: 'Joined', width: '110px', render: (v) => v ? new Date(v).toLocaleDateString() : '—' },
-    { key: 'lastLoginAt', label: 'Last Login', width: '110px', render: (v) => v ? new Date(v).toLocaleDateString() : 'Never' },
+    { key: 'createdAt', label: 'Joined', width: '110px', render: (v) => formatDate(v) },
+    { key: 'lastLoginAt', label: 'Last Login', width: '110px', render: (v) => v ? formatDate(v) : 'Never' },
     { key: '_actions', label: 'Actions', width: '160px', render: (_, row) => (
       <div style={{ display: 'flex', gap: '6px' }}>
         {row.accountStatus !== 'Active' && (

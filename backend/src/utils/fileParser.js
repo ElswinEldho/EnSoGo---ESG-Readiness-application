@@ -72,11 +72,6 @@ function parseYearStrict(raw) {
   return { value: null, invalid: true };
 }
 
-// Expose for re-use in routes (manual entry validation)
-module.exports && (module.exports.parseMonthStrict = parseMonthStrict);
-module.exports && (module.exports.parseYearStrict  = parseYearStrict);
-module.exports && (module.exports.STRICT_MONTH_MAP  = STRICT_MONTH_MAP);
-
 // ---------------------------------------------------------------------------
 // V2 template detection
 // ---------------------------------------------------------------------------
@@ -93,17 +88,22 @@ function detectV2Template(headerRow) {
 }
 
 // ---------------------------------------------------------------------------
-// V2 template row parser
-// Returns array of records, null if not recognised, or throws on validation errors.
+// V2 template row parser — sub-functions
 // ---------------------------------------------------------------------------
-function parseV2TemplateRows(rows2d, category, invalidValueRows) {
-  // 1. Find header row with both Month and Year
+
+/**
+ * Locate the V2 header row (containing 'month' and 'year'), detect template type,
+ * resolve column positions and any sub-header row (Water/Waste).
+ * Returns null if this is not a V2 template or does not match `category`.
+ * Returns { ttype, monthCol, yearCol, cols, dataStart } on success.
+ */
+function findV2HeaderInfo(rows2d, category) {
   let headerIdx = -1;
   for (let i = 0; i < rows2d.length; i++) {
-    const r = rows2d[i];
-    const hm = r.some((c) => String(c || '').trim().toLowerCase() === 'month');
-    const hy = r.some((c) => String(c || '').trim().toLowerCase() === 'year');
-    if (hm && hy) { headerIdx = i; break; }
+    const row      = rows2d[i];
+    const hasMonth = row.some((c) => String(c || '').trim().toLowerCase() === 'month');
+    const hasYear  = row.some((c) => String(c || '').trim().toLowerCase() === 'year');
+    if (hasMonth && hasYear) { headerIdx = i; break; }
   }
   if (headerIdx === -1) return null;
 
@@ -112,7 +112,6 @@ function parseV2TemplateRows(rows2d, category, invalidValueRows) {
   if (!ttype) return null;
   if (category && ttype !== category) return null;
 
-  // 2. Month/Year column indices
   let monthCol = -1, yearCol = -1;
   for (let i = 0; i < header.length; i++) {
     const lc = String(header[i] || '').trim().toLowerCase();
@@ -120,21 +119,27 @@ function parseV2TemplateRows(rows2d, category, invalidValueRows) {
     if (lc === 'year')  yearCol  = i;
   }
 
-  // 3. Sub-header detection (Water/Waste)
+  // Sub-header row detection: Water/Waste templates have a row of sub-column names
+  // immediately after the header row. The EnSoGo templates repeat the literal labels
+  // "Month" and "Year" in the sub-header's first two cells — so we treat those as
+  // equivalent to empty (i.e. the cell is a label, not a data value).
   const subMap = {};
-  const probe  = rows2d[headerIdx + 1] || [];
-  const pmEmpty = !probe[monthCol] || !String(probe[monthCol]).trim();
-  const pyEmpty = !probe[yearCol]  || !String(probe[yearCol]).trim();
-  if (pmEmpty && pyEmpty) {
-    probe.forEach((cell, i) => {
-      const v = String(cell || '').trim();
-      if (v) subMap[i] = v.toLowerCase();
+  const probeRow       = rows2d[headerIdx + 1] || [];
+  const probeMonthStr  = String(probeRow[monthCol] || '').trim().toLowerCase();
+  const probeYearStr   = String(probeRow[yearCol]  || '').trim().toLowerCase();
+  const probeMonthIsLabel = probeMonthStr === '' || probeMonthStr === 'month';
+  const probeYearIsLabel  = probeYearStr  === '' || probeYearStr  === 'year';
+  if (probeMonthIsLabel && probeYearIsLabel) {
+    probeRow.forEach((cell, i) => {
+      if (i === monthCol || i === yearCol) return;  // skip the label columns
+      const cellValue = String(cell || '').trim();
+      if (cellValue) subMap[i] = cellValue.toLowerCase();
     });
   }
   const hasSub    = Object.keys(subMap).length > 0;
   const dataStart = hasSub ? headerIdx + 2 : headerIdx + 1;
 
-  // 4. Data column definitions [{colIdx, name}]
+  // Data column definitions: [{colIdx, name}]
   const cols = [];
   if (hasSub) {
     Object.keys(subMap).forEach((ci) => cols.push({ colIdx: parseInt(ci, 10), name: subMap[ci] }));
@@ -146,9 +151,15 @@ function parseV2TemplateRows(rows2d, category, invalidValueRows) {
     });
   }
 
-  const isOptional = ttype === 'water' || ttype === 'waste';
+  return { ttype, monthCol, yearCol, cols, dataStart };
+}
 
-  // 5. First pass — validate month and year across all non-blank rows
+/**
+ * First-pass validation over data rows: parse month/year, skip blanks,
+ * and throw on invalid month format, invalid year format, or multi-year upload.
+ * Returns array of { row, month, year } for valid rows.
+ */
+function validateV2DataRows(rows2d, dataStart, monthCol, yearCol) {
   let hasInvalidMonth = false;
   let hasInvalidYear  = false;
   const parsed = [];
@@ -157,6 +168,8 @@ function parseV2TemplateRows(rows2d, category, invalidValueRows) {
     const row = rows2d[r];
     if (!row || !row.length) continue;
     if (row.every((c) => c === null || c === undefined || c === '')) continue;
+    // Skip any repeated header/label row (e.g. "Month" | "Year" | sub-column names)
+    if (String(row[monthCol] || '').trim().toLowerCase() === 'month') continue;
 
     const mr = parseMonthStrict(row[monthCol]);
     const yr = parseYearStrict(String(row[yearCol] == null ? '' : row[yearCol]));
@@ -168,148 +181,165 @@ function parseV2TemplateRows(rows2d, category, invalidValueRows) {
     parsed.push({ row, month: mr.value, year: yr.value });
   }
 
-  // Validation errors — checked in priority order
-  if (hasInvalidMonth) {
-    const e = new Error('Enter correct month format');
-    e.status = 400; throw e;
-  }
-  if (hasInvalidYear) {
-    const e = new Error('Invalid year format. Data cannot be added.');
-    e.status = 400; throw e;
-  }
-  const yearKeys = [...new Set(parsed.map((p) => p.year))];
-  if (yearKeys.length > 1) {
-    const e = new Error('Different years cannot be uploaded together.');
-    e.status = 400; throw e;
-  }
+  if (hasInvalidMonth) { const e = new Error('Enter correct month format'); e.status = 400; throw e; }
+  if (hasInvalidYear)  { const e = new Error('Invalid year format. Data cannot be added.'); e.status = 400; throw e; }
+  const uniqueYears = [...new Set(parsed.map((p) => p.year))];
+  if (uniqueYears.length > 1) { const e = new Error('Different years cannot be uploaded together.'); e.status = 400; throw e; }
 
-  // 6. Second pass — build records
-  const records = [];
-  // invalidValueRows is the accumulator passed in from parseFile(); push to it
-  // when a row has valid month+year but a non-numeric value in a calculation field.
+  return parsed;
+}
 
-  for (const { row, month, year } of parsed) {
-    if (isOptional) {
-      let total = 0;
-      const parts = [];
-      let rowHasInvalid = false;
-      for (const { colIdx: ci, name } of cols) {
-        const raw = row[ci];
-        if (raw === null || raw === undefined || String(raw).trim() === '') continue;
-        if (isInvalidValue(raw)) {
-          if (invalidValueRows) invalidValueRows.push({ month, year, column: name, rawValue: String(raw).trim() });
-          rowHasInvalid = true;
-        } else {
-          const n = numVal(raw);
-          if (isFinite(n)) { total += n; parts.push(name + ': ' + n); }
-        }
-      }
-      if (rowHasInvalid) continue;
-      if (!parts.length) continue;
-      records.push({ month, year, value: Math.round(total * 100) / 100, unit: defaultUnitFor(ttype), notes: parts.join('; ') });
+/**
+ * Build one record for optional-column templates (water, waste) where multiple
+ * columns are summed into a single total. Returns null to skip the row.
+ */
+function buildV2OptionalRecord(row, month, year, cols, ttype, invalidValueRows) {
+  let total = 0;
+  const parts = [];
+  let rowHasInvalid = false;
 
+  for (const { colIdx: ci, name } of cols) {
+    const raw = row[ci];
+    if (raw === null || raw === undefined || String(raw).trim() === '') continue;
+    if (isInvalidValue(raw)) {
+      if (invalidValueRows) invalidValueRows.push({ month, year, column: name, rawValue: String(raw).trim() });
+      rowHasInvalid = true;
     } else {
-      // Transport rows may have only some sub-columns filled (e.g. only Vehicle KM but
-      // no Fleet Fuel or Cargo). Skip the strict all-columns check for transport so those
-      // rows are still processed; the transport branch already guards with its own
-      // "at least one subcategory must be valid" check.
-      if (ttype !== 'transport') {
-        if (!cols.every(({ colIdx: ci }) => {
-          const v = row[ci];
-          return v !== null && v !== undefined && String(v).trim() !== '';
-        })) continue;
-      }
-
-      const fNum = (kw) => { const d = cols.find((c) => c.name.includes(kw)); return d ? numVal(row[d.colIdx]) : NaN; };
-      const fStr = (kw) => { const d = cols.find((c) => c.name.includes(kw)); return d ? String(row[d.colIdx] || '').trim() : ''; };
-      // fRaw: get the raw cell value for a column (for invalid-value detection before parsing)
-      const fRaw = (kw) => { const d = cols.find((c) => c.name.includes(kw)); return d !== undefined ? row[d.colIdx] : undefined; };
-
-      let rec = null;
-
-      if (ttype === 'electricity') {
-        const rawKwh = fRaw('kwh');
-        if (rawKwh !== undefined && isInvalidValue(rawKwh)) {
-          if (invalidValueRows) invalidValueRows.push({ month, year, column: 'kWh', rawValue: String(rawKwh).trim() });
-          continue;
-        }
-        const kwh = fNum('kwh');
-        if (!isFinite(kwh)) continue;
-        rec = { month, year, value: Math.round(kwh * 100) / 100, unit: 'kWh' };
-        const c1 = fNum('cost');         if (isFinite(c1)) rec.cost          = c1;
-        const pk = fNum('peak');         if (isFinite(pk)) rec.peakDemandKva  = pk;
-        const pf = fNum('power factor'); if (isFinite(pf)) rec.powerFactor    = pf;
-        const mt = fStr('meter');        if (mt) rec.notes = mt;
-
-      } else if (ttype === 'fuel') {
-        const rawDiesel = fRaw('diesel');
-        if (rawDiesel !== undefined && isInvalidValue(rawDiesel)) {
-          if (invalidValueRows) invalidValueRows.push({ month, year, column: 'Diesel litres', rawValue: String(rawDiesel).trim() });
-          continue;
-        }
-        const lt  = fNum('diesel');
-        // PNG / CNG — accept several common column-header variants
-        let pc = fNum('png');
-        if (!isFinite(pc)) pc = fNum('cng');
-        if (!isFinite(pc)) pc = fNum('natural gas');
-        if (!isFinite(pc)) pc = fNum('gas');
-        if (!isFinite(pc)) pc = fNum('lng');
-
-        const dieselVal = isFinite(lt) ? Math.round(lt  * 100) / 100 : 0;
-        const pngCngVal = isFinite(pc) ? Math.round(pc  * 100) / 100 : 0;
-
-        if (dieselVal === 0 && pngCngVal === 0) continue;
-
-        rec = { month, year, value: dieselVal, unit: 'litres' };
-        if (pngCngVal > 0) rec.pngCng = pngCngVal;  // m³
-
-        const noteParts = [];
-        const rt = fNum('runtime'); if (isFinite(rt)) noteParts.push('Runtime hours: ' + rt);
-        if (noteParts.length) rec.notes = noteParts.join('; ');
-        const c2 = fNum('cost');   if (isFinite(c2)) rec.cost = c2;
-
-      } else if (ttype === 'refrigerants') {
-        const rawQty = fRaw('quantity') !== undefined ? fRaw('quantity') : fRaw('kg');
-        if (rawQty !== undefined && isInvalidValue(rawQty)) {
-          if (invalidValueRows) invalidValueRows.push({ month, year, column: 'Refrigerant quantity', rawValue: String(rawQty).trim() });
-          continue;
-        }
-        let qty = fNum('quantity'); if (!isFinite(qty)) qty = fNum('kg');
-        if (!isFinite(qty)) continue;
-        rec = { month, year, value: Math.round(qty * 100) / 100, unit: 'kg' };
-        const rt2 = fStr('refrigerant type') || fStr('annual'); if (rt2) rec.source = rt2;
-
-      } else if (ttype === 'transport') {
-        const rawVkm = fRaw('vehicle km') !== undefined ? fRaw('vehicle km') : fRaw(' km');
-        if (rawVkm !== undefined && isInvalidValue(rawVkm)) {
-          if (invalidValueRows) invalidValueRows.push({ month, year, column: 'Vehicle km', rawValue: String(rawVkm).trim() });
-          continue;
-        }
-        let vkm = fNum('vehicle km'); if (!isFinite(vkm)) vkm = fNum(' km');
-        let ff  = fNum('fleet fuel'); if (!isFinite(ff))  ff  = fNum('fuel');
-        let cg  = fNum('cargo');      if (!isFinite(cg))  cg  = fNum('logistics');
-
-        // At least one subcategory must have a valid numeric value
-        if (!isFinite(vkm) && !isFinite(ff) && !isFinite(cg)) continue;
-
-        const vkmVal = isFinite(vkm) ? Math.round(vkm * 100) / 100 : 0;
-        const ffVal  = isFinite(ff)  ? Math.round(ff  * 100) / 100 : 0;
-        const cgVal  = isFinite(cg)  ? Math.round(cg  * 100) / 100 : 0;
-
-        rec = { month, year, value: vkmVal, unit: 'tonne-km' };
-        if (ffVal > 0) rec.fleetFuel = ffVal;   // litres
-        if (cgVal > 0) rec.cargo     = cgVal;   // t-km
-
-        const np = [];
-        if (ffVal > 0) np.push('Fleet fuel: ' + ffVal + ' L');
-        if (cgVal > 0) np.push('Cargo: '      + cgVal + ' t-km');
-        if (np.length) rec.notes = np.join('; ');
-
-      } else { continue; }
-
-      if (rec) records.push(rec);
+      const n = numVal(raw);
+      if (isFinite(n)) { total += n; parts.push(name + ': ' + n); }
     }
   }
+
+  if (rowHasInvalid || !parts.length) return null;
+  return { month, year, value: Math.round(total * 100) / 100, unit: defaultUnitFor(ttype), notes: parts.join('; ') };
+}
+
+/**
+ * Build one record for strict-column templates (electricity, fuel, refrigerants,
+ * transport). Returns null to skip the row.
+ * Transport rows may have only some sub-columns filled — partial rows are allowed.
+ */
+function buildV2DataRecord(row, month, year, cols, ttype, invalidValueRows) {
+  // Strict completeness check — all columns must be filled, except for transport
+  if (ttype !== 'transport') {
+    const allFilled = cols.every(({ colIdx: ci }) => {
+      const v = row[ci];
+      return v !== null && v !== undefined && String(v).trim() !== '';
+    });
+    if (!allFilled) return null;
+  }
+
+  const fNum = (kw) => { const col = cols.find((c) => c.name.includes(kw)); return col ? numVal(row[col.colIdx]) : NaN; };
+  const fStr = (kw) => { const col = cols.find((c) => c.name.includes(kw)); return col ? String(row[col.colIdx] || '').trim() : ''; };
+  const fRaw = (kw) => { const col = cols.find((c) => c.name.includes(kw)); return col !== undefined ? row[col.colIdx] : undefined; };
+
+  if (ttype === 'electricity') {
+    const rawKwh = fRaw('kwh');
+    if (rawKwh !== undefined && isInvalidValue(rawKwh)) {
+      if (invalidValueRows) invalidValueRows.push({ month, year, column: 'kWh', rawValue: String(rawKwh).trim() });
+      return null;
+    }
+    const kwh = fNum('kwh');
+    if (!isFinite(kwh)) return null;
+    const rec = { month, year, value: Math.round(kwh * 100) / 100, unit: 'kWh' };
+    const cost = fNum('cost');          if (isFinite(cost)) rec.cost         = cost;
+    const peak = fNum('peak');          if (isFinite(peak)) rec.peakDemandKva = peak;
+    const pf   = fNum('power factor');  if (isFinite(pf))   rec.powerFactor   = pf;
+    const meter = fStr('meter');        if (meter) rec.notes = meter;
+    return rec;
+  }
+
+  if (ttype === 'fuel') {
+    const rawDiesel = fRaw('diesel');
+    if (rawDiesel !== undefined && isInvalidValue(rawDiesel)) {
+      if (invalidValueRows) invalidValueRows.push({ month, year, column: 'Diesel litres', rawValue: String(rawDiesel).trim() });
+      return null;
+    }
+    const dieselLitres = fNum('diesel');
+    // PNG/CNG — accept several common column-header variants
+    let pngCngLitres = fNum('png');
+    if (!isFinite(pngCngLitres)) pngCngLitres = fNum('cng');
+    if (!isFinite(pngCngLitres)) pngCngLitres = fNum('natural gas');
+    if (!isFinite(pngCngLitres)) pngCngLitres = fNum('gas');
+    if (!isFinite(pngCngLitres)) pngCngLitres = fNum('lng');
+
+    const dieselVal = isFinite(dieselLitres) ? Math.round(dieselLitres * 100) / 100 : 0;
+    const pngCngVal = isFinite(pngCngLitres) ? Math.round(pngCngLitres * 100) / 100 : 0;
+    if (dieselVal === 0 && pngCngVal === 0) return null;
+
+    const rec = { month, year, value: dieselVal, unit: 'litres' };
+    if (pngCngVal > 0) rec.pngCng = pngCngVal;
+    const runtime = fNum('runtime');
+    if (isFinite(runtime)) rec.notes = 'Runtime hours: ' + runtime;
+    const cost = fNum('cost'); if (isFinite(cost)) rec.cost = cost;
+    return rec;
+  }
+
+  if (ttype === 'refrigerants') {
+    const rawQty = fRaw('quantity') !== undefined ? fRaw('quantity') : fRaw('kg');
+    if (rawQty !== undefined && isInvalidValue(rawQty)) {
+      if (invalidValueRows) invalidValueRows.push({ month, year, column: 'Refrigerant quantity', rawValue: String(rawQty).trim() });
+      return null;
+    }
+    let qty = fNum('quantity');
+    if (!isFinite(qty)) qty = fNum('kg');
+    if (!isFinite(qty)) return null;
+    const rec = { month, year, value: Math.round(qty * 100) / 100, unit: 'kg' };
+    const refType = fStr('refrigerant type') || fStr('annual');
+    if (refType) rec.source = refType;
+    return rec;
+  }
+
+  if (ttype === 'transport') {
+    const rawVkm = fRaw('vehicle km') !== undefined ? fRaw('vehicle km') : fRaw(' km');
+    if (rawVkm !== undefined && isInvalidValue(rawVkm)) {
+      if (invalidValueRows) invalidValueRows.push({ month, year, column: 'Vehicle km', rawValue: String(rawVkm).trim() });
+      return null;
+    }
+    let vehicleKm = fNum('vehicle km'); if (!isFinite(vehicleKm)) vehicleKm = fNum(' km');
+    let fleetFuel = fNum('fleet fuel'); if (!isFinite(fleetFuel)) fleetFuel = fNum('fuel');
+    let cargo     = fNum('cargo');      if (!isFinite(cargo))     cargo     = fNum('logistics');
+
+    // At least one subcategory must have a valid numeric value
+    if (!isFinite(vehicleKm) && !isFinite(fleetFuel) && !isFinite(cargo)) return null;
+
+    const vkmVal      = isFinite(vehicleKm) ? Math.round(vehicleKm * 100) / 100 : 0;
+    const fleetFuelVal = isFinite(fleetFuel) ? Math.round(fleetFuel * 100) / 100 : 0;
+    const cargoVal    = isFinite(cargo)     ? Math.round(cargo     * 100) / 100 : 0;
+
+    const rec = { month, year, value: vkmVal, unit: 'tonne-km' };
+    if (fleetFuelVal > 0) rec.fleetFuel = fleetFuelVal;
+    if (cargoVal     > 0) rec.cargo     = cargoVal;
+    const noteParts = [];
+    if (fleetFuelVal > 0) noteParts.push('Fleet fuel: ' + fleetFuelVal + ' L');
+    if (cargoVal     > 0) noteParts.push('Cargo: '      + cargoVal     + ' t-km');
+    if (noteParts.length) rec.notes = noteParts.join('; ');
+    return rec;
+  }
+
+  return null;
+}
+
+/**
+ * V2 template row parser — orchestrator.
+ * Returns array of records, null if not recognised, or throws on validation errors.
+ */
+function parseV2TemplateRows(rows2d, category, invalidValueRows) {
+  const headerInfo = findV2HeaderInfo(rows2d, category);
+  if (!headerInfo) return null;
+
+  const { ttype, monthCol, yearCol, cols, dataStart } = headerInfo;
+  const validRows  = validateV2DataRows(rows2d, dataStart, monthCol, yearCol);
+  const isOptional = ttype === 'water' || ttype === 'waste';
+  const records    = [];
+
+  for (const { row, month, year } of validRows) {
+    const record = isOptional
+      ? buildV2OptionalRecord(row, month, year, cols, ttype, invalidValueRows)
+      : buildV2DataRecord(row, month, year, cols, ttype, invalidValueRows);
+    if (record) records.push(record);
+  }
+
   return records;
 }
 

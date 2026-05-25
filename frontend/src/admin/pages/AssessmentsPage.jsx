@@ -11,6 +11,7 @@ import KpiCard from '../components/KpiCard';
 import { useDarkMode } from '../components/AdminLayout';
 import { useToast } from '../components/AdminToast';
 import { sectorName } from '../../lib/sectors.js';
+import { formatDate } from '../../constants/index.js';
 
 export default function AssessmentsPage() {
   const { api } = useAdminAuth();
@@ -55,8 +56,8 @@ export default function AssessmentsPage() {
     )},
     { key: 'sectorCode', label: 'Sector', render: (v) => sectorName(v) },
     { key: 'status', label: 'Status', width: '130px', render: (v) => <AdminBadge value={v} dark={dark} /> },
-    { key: 'createdAt', label: 'Created', width: '110px', render: (v) => v ? new Date(v).toLocaleDateString() : '—' },
-    { key: 'updatedAt', label: 'Updated', width: '110px', render: (v) => v ? new Date(v).toLocaleDateString() : '—' },
+    { key: 'createdAt', label: 'Created', width: '110px', render: (v) => formatDate(v) },
+    { key: 'updatedAt', label: 'Updated', width: '110px', render: (v) => formatDate(v) },
   ];
 
   const filterEl = (

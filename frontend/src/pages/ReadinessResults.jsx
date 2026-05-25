@@ -16,6 +16,7 @@ import {
 import { api } from '../lib/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { captureAsPdf, printAsPdf } from '../lib/pdfCapture.js';
+import { formatDate } from '../constants/index.js';
 
 const RISK_COLOUR = (level) =>
   level === 'High' ? 'red' : level === 'Medium-High' ? 'orange' : level === 'Medium' ? 'amber' : 'green';
@@ -201,7 +202,7 @@ export default function ReadinessResults() {
           </div>
           <div className="ml-auto text-right">
             <div className="text-[12px] font-semibold text-slate-700">Sustainability Readiness Report</div>
-            <div className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div className="text-[10px] text-slate-400">{formatDate(new Date(), { day: '2-digit', month: 'short', year: 'numeric' })}</div>
           </div>
         </div>
 

@@ -5,8 +5,10 @@
  */
 
 const ConversionFactor = require('../models/ConversionFactor');
-const { createAuditEntry } = require('../middleware/adminLogger');
-const { invalidateCache } = require('../../services/conversionFactorsService');
+const Assessment       = require('../../models/Assessment');
+const { createAuditEntry }  = require('../middleware/adminLogger');
+const { invalidateCache }   = require('../../services/conversionFactorsService');
+const { refreshSummary }    = require('../../services/assessmentService');
 
 /**
  * Clears the persisted `summary` from all assessments that have one,
@@ -16,7 +18,6 @@ const { invalidateCache } = require('../../services/conversionFactorsService');
  */
 async function _invalidateAssessmentSummaries() {
   try {
-    const Assessment = require('../../models/Assessment');
     await Assessment.updateMany(
       { summary: { $exists: true, $ne: null } },
       { $unset: { summary: '' } }
@@ -35,9 +36,6 @@ async function _invalidateAssessmentSummaries() {
  */
 async function recalculateAllAssessments(req, res, next) {
   try {
-    const Assessment = require('../../models/Assessment');
-    const { refreshSummary } = require('../../services/assessmentService');
-
     const assessments = await Assessment.find({
       status: { $in: ['SummaryReady', 'ReadinessReady', 'DataLoad'] },
       'records': { $exists: true },

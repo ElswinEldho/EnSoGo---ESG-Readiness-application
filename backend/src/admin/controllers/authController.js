@@ -5,6 +5,7 @@
 const AdminUser = require('../models/AdminUser');
 const { issueAdminToken } = require('../middleware/adminAuth');
 const { createAuditEntry } = require('../middleware/adminLogger');
+const { RATE_LIMITS } = require('../../constants');
 
 // POST /api/admin/auth/login
 async function login(req, res, next) {
@@ -30,11 +31,12 @@ async function login(req, res, next) {
     const ok = await admin.verifyPassword(password);
     if (!ok) {
       admin.failedLoginAttempts = (admin.failedLoginAttempts || 0) + 1;
-      if (admin.failedLoginAttempts >= 5) {
-        admin.lockedUntil = new Date(Date.now() + 30 * 60 * 1000); // 30 min lock
+      if (admin.failedLoginAttempts >= RATE_LIMITS.MAX_FAILED_LOGINS) {
+        admin.lockedUntil = new Date(Date.now() + RATE_LIMITS.LOCK_DURATION_MS);
         admin.failedLoginAttempts = 0;
         await admin.save();
-        return res.status(423).json({ error: 'Too many failed attempts. Account locked for 30 minutes.' });
+        const lockMinutes = Math.round(RATE_LIMITS.LOCK_DURATION_MS / 60000);
+        return res.status(423).json({ error: `Too many failed attempts. Account locked for ${lockMinutes} minutes.` });
       }
       await admin.save();
       return res.status(401).json({ error: 'Invalid email or password.' });

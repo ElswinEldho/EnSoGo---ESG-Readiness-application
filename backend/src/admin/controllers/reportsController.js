@@ -2,20 +2,16 @@
  * Admin Reports Controller.
  */
 
-const Report = require('../../models/Report');
-const { createAuditEntry } = require('../middleware/adminLogger');
-const fs = require('fs');
+const Report     = require('../../models/Report');
+const { createAuditEntry }               = require('../middleware/adminLogger');
+const { parsePaginationParams, paginatedResponse } = require('../utils/pagination');
+const { deleteFileSafely, daysAgo }      = require('../../utils/fileUtils');
 
 // GET /api/admin/reports
 async function listReports(req, res, next) {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      search = '',
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = req.query;
+    const { search = '' } = req.query;
+    const { page, limit, skip, sort } = parsePaginationParams(req.query);
 
     const filter = {};
     if (search) {
@@ -25,28 +21,17 @@ async function listReports(req, res, next) {
       ];
     }
 
-    const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    const skip = (Number(page) - 1) * Number(limit);
-
     const [reports, total] = await Promise.all([
       Report.find(filter)
         .sort(sort)
         .skip(skip)
-        .limit(Number(limit))
+        .limit(limit)
         .populate('user', 'fullName email organizationName')
         .lean(),
       Report.countDocuments(filter),
     ]);
 
-    res.json({
-      data: reports,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit)),
-      },
-    });
+    res.json(paginatedResponse(reports, total, page, limit));
   } catch (err) {
     next(err);
   }
@@ -60,9 +45,7 @@ async function deleteReport(req, res, next) {
 
     const before = { type: report.type, filePath: report.filePath };
 
-    if (report.filePath) {
-      try { fs.unlinkSync(report.filePath); } catch (_) { /* already gone */ }
-    }
+    if (report.filePath) deleteFileSafely(report.filePath);
     await Report.findByIdAndDelete(report._id);
 
     await createAuditEntry({
@@ -83,9 +66,10 @@ async function deleteReport(req, res, next) {
 // GET /api/admin/reports/stats
 async function getReportStats(req, res, next) {
   try {
-    const total = await Report.countDocuments();
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const last30Days = await Report.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
+    const [total, last30Days] = await Promise.all([
+      Report.countDocuments(),
+      Report.countDocuments({ createdAt: { $gte: daysAgo(30) } }),
+    ]);
     res.json({ data: { total, last30Days } });
   } catch (err) {
     next(err);

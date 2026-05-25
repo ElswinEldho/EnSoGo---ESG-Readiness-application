@@ -2,14 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { countMonthsUploaded, categoryCompletenessPct, overallCompletenessPct } = require('../src/engine/completeness');
-const { annualize } = require('../src/engine/annualization');
-const { runAllChecks } = require('../src/engine/validation');
-const { computeScope1, computeScope2, computeScope3, computeTotal } = require('../src/engine/emissions');
-const benchmarking = require('../src/engine/benchmarking');
-const { scoreAll } = require('../src/engine/scoring');
-const { scoreAllApplicable } = require('../src/engine/certification');
-const { generateStrengths, generateGaps, generateRoadmap } = require('../src/engine/strengthsGaps');
+const { countMonthsUploaded, categoryCompletenessPct, overallCompletenessPct } = require('../src/utils/engine/completeness');
+const { annualize } = require('../src/utils/engine/annualization');
+const { runAllChecks } = require('../src/utils/engine/validation');
+const { computeScope1, computeScope2, computeScope3, computeTotal } = require('../src/utils/engine/emissions');
+const benchmarking = require('../src/utils/engine/benchmarking');
+const { scoreAll } = require('../src/utils/engine/scoring');
+const { scoreAllApplicable } = require('../src/utils/engine/certification');
+const { generateStrengths, generateGaps, generateRoadmap } = require('../src/utils/engine/strengthsGaps');
 
 const fakeRecords = (values, unit) => values.map((v, i) => ({ month: i + 1, year: 2024, value: v, unit }));
 

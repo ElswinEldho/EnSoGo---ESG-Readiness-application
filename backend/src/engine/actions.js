@@ -1,13 +1,7 @@
-// Action library lookup utilities — BRD §15.4.
-
-const { ACTION_LIBRARY } = require('../data/rules');
-
-function lookupAction(actionTrigger) {
-  return ACTION_LIBRARY[actionTrigger] || null;
-}
-
-function listAllActions() {
-  return Object.entries(ACTION_LIBRARY).map(([key, v]) => ({ key, ...v }));
-}
-
-module.exports = { lookupAction, listAllActions };
+// This file has been removed.
+// All engine modules live in backend/src/utils/engine/
+// This shim folder (backend/src/engine/) is no longer used.
+throw new Error(
+  'backend/src/engine/ has been removed — '
+  + 'import from ../utils/engine/ instead.'
+);

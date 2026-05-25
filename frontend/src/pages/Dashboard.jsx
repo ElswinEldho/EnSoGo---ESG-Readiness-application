@@ -4,7 +4,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useUpload } from '../lib/uploadContext.jsx';
 import { sectorName } from '../lib/sectors.js';
-import { routeForStatus } from '../constants/index.js';
+import { routeForStatus, formatDate } from '../constants/index.js';
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 // ReadinessReady = fully completed; anything else = in progress
@@ -72,7 +72,7 @@ function AssessmentPopup({ item, onClose, onOpen }) {
             <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#0f172a', margin: 0 }}>{item.organizationName || 'Untitled'}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
               <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '100px', background: '#f1f5f9', color: '#64748b' }}>{sectorName(item.sectorCode)}</span>
-              <span style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(item.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span style={{ fontSize: '10px', color: '#94a3b8' }}>{formatDate(item.updatedAt)}</span>
             </div>
           </div>
           <button onClick={onClose} style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: '#f8fafc', cursor: 'pointer', color: '#94a3b8' }}>
@@ -213,7 +213,7 @@ function AssessmentHistoryPopup({ items, onClose, onSelect }) {
                       <span style={{ fontSize: '9px', fontWeight: '800', padding: '2px 7px', borderRadius: '100px', background: col + '18', color: col, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{statusLabel(a.status)}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(a.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>{formatDate(a.updatedAt)}</span>
                       <span style={{ fontSize: '10px', fontWeight: '700', color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: '6px' }}>{sectorName(a.sectorCode)}</span>
                     </div>
                     {completeness !== undefined && (
@@ -305,7 +305,7 @@ const StatCard = memo(function StatCard({ label, value, subtitle, iconPath, acce
 export default function Dashboard() {
   const { user } = useAuth();
   const { setHasUpload } = useUpload();
-  const nav = useNavigate();
+  const navigate = useNavigate();
   const [items, setItems]             = useState([]);
   const [busy, setBusy]               = useState(false);
   const [selected, setSelected]       = useState(null);
@@ -337,8 +337,8 @@ export default function Dashboard() {
     setBusy(true); setCreateError('');
     try {
       const r = await api.post('/assessments');
-      nav(`/assessment/${r.data.ensogoId}/data-load`);
-      // Note: nav() unmounts this component, so no need to reset refs on success.
+      navigate(`/assessment/${r.data.ensogoId}/data-load`);
+      // Note: navigate() unmounts this component, so no need to reset refs on success.
     } catch (err) {
       setCreateError(err.response?.data?.error || 'Could not create assessment. Please check your connection and try again.');
       creatingRef.current = false;
@@ -347,7 +347,7 @@ export default function Dashboard() {
 
   function openItem(a) {
     setSelected(null); setShowHistory(false);
-    nav(`/assessment/${a.ensogoId}/${routeForStatus(a.status)}`);
+    navigate(`/assessment/${a.ensogoId}/${routeForStatus(a.status)}`);
   }
 
   const { completed, avgScore, inProgress } = useMemo(() => {

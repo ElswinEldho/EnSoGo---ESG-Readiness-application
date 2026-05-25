@@ -2,18 +2,18 @@
  * Admin Analytics Controller — dashboard KPIs and chart data.
  */
 
-const User = require('../../models/User');
+const User       = require('../../models/User');
 const Assessment = require('../../models/Assessment');
-const Report = require('../../models/Report');
-const UploadLog = require('../../models/UploadLog');
-const AuditLog = require('../models/AuditLog');
+const Report     = require('../../models/Report');
+const UploadLog  = require('../../models/UploadLog');
+const AuditLog   = require('../models/AuditLog');
+const { SECTORS } = require('../../data/sectors');
+const { daysAgo } = require('../../utils/fileUtils');
 
 // GET /api/admin/analytics/dashboard — main dashboard KPIs
 async function getDashboardStats(req, res, next) {
   try {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = daysAgo(30);
 
     const [
       totalUsers,
@@ -36,10 +36,7 @@ async function getDashboardStats(req, res, next) {
       Report.countDocuments(),
       Report.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
       UploadLog.countDocuments(),
-      AuditLog.find()
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean(),
+      AuditLog.find().sort({ createdAt: -1 }).limit(10).lean(),
     ]);
 
     res.json({
@@ -67,16 +64,15 @@ async function getDashboardStats(req, res, next) {
 async function getUserGrowth(req, res, next) {
   try {
     const { days = 30 } = req.query;
-    const since = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
 
     const result = await User.aggregate([
-      { $match: { createdAt: { $gte: since } } },
+      { $match: { createdAt: { $gte: daysAgo(Number(days)) } } },
       {
         $group: {
           _id: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' },
-            day: { $dayOfMonth: '$createdAt' },
+            year:  { $year:       '$createdAt' },
+            month: { $month:      '$createdAt' },
+            day:   { $dayOfMonth: '$createdAt' },
           },
           count: { $sum: 1 },
         },
@@ -85,7 +81,7 @@ async function getUserGrowth(req, res, next) {
     ]);
 
     const data = result.map((r) => ({
-      date: `${r._id.year}-${String(r._id.month).padStart(2, '0')}-${String(r._id.day).padStart(2, '0')}`,
+      date:  `${r._id.year}-${String(r._id.month).padStart(2, '0')}-${String(r._id.day).padStart(2, '0')}`,
       count: r.count,
     }));
 
@@ -111,7 +107,6 @@ async function getAssessmentsByStatus(req, res, next) {
 // GET /api/admin/analytics/assessments-by-sector
 async function getAssessmentsBySector(req, res, next) {
   try {
-    const { SECTORS } = require('../../data/sectors');
     const result = await Assessment.aggregate([
       { $group: { _id: '$sectorCode', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
@@ -119,8 +114,8 @@ async function getAssessmentsBySector(req, res, next) {
     ]);
     const data = result.map((r) => ({
       sector: (SECTORS[r._id] && SECTORS[r._id].name) || r._id,
-      code: r._id,
-      count: r.count,
+      code:   r._id,
+      count:  r.count,
     }));
     res.json({ data });
   } catch (err) {
@@ -132,16 +127,15 @@ async function getAssessmentsBySector(req, res, next) {
 async function getUploadActivity(req, res, next) {
   try {
     const { days = 14 } = req.query;
-    const since = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
 
     const result = await UploadLog.aggregate([
-      { $match: { createdAt: { $gte: since } } },
+      { $match: { createdAt: { $gte: daysAgo(Number(days)) } } },
       {
         $group: {
           _id: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' },
-            day: { $dayOfMonth: '$createdAt' },
+            year:     { $year:       '$createdAt' },
+            month:    { $month:      '$createdAt' },
+            day:      { $dayOfMonth: '$createdAt' },
             category: '$category',
           },
           count: { $sum: 1 },

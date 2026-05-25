@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useUpload } from '../lib/uploadContext.jsx';
 import { sectorName } from '../lib/sectors.js';
+import { formatDate } from '../constants/index.js';
 
 const CATEGORIES = [
   { key: 'electricity',  label: 'Electricity',  unit: 'kWh',    desc: 'Monthly bills, meter readings',
@@ -973,7 +974,7 @@ export default function DataLoad() {
                           <td className="py-2 pr-3 capitalize text-slate-600">{u.category}</td>
                           <td className="py-2 pr-3 text-slate-600">{u.monthsAdded?.length || 0}</td>
                           <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">
-                            <div>{new Date(u.createdAt).toLocaleDateString()}</div>
+                            <div>{formatDate(u.createdAt)}</div>
                             <div className="text-[10px] text-slate-400">{new Date(u.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                           </td>
                           <td className="py-2">

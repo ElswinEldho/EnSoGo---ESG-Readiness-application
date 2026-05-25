@@ -3,50 +3,30 @@
  */
 
 const Assessment = require('../../models/Assessment');
-const User = require('../../models/User');
+const { parsePaginationParams, paginatedResponse } = require('../utils/pagination');
 
 // GET /api/admin/assessments
 async function listAssessments(req, res, next) {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      search = '',
-      status,
-      sector,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = req.query;
+    const { search = '', status, sector } = req.query;
+    const { page, limit, skip, sort } = parsePaginationParams(req.query);
 
     const filter = {};
     if (status) filter.status = status;
     if (sector) filter.sectorCode = sector.toUpperCase();
-    if (search) {
-      filter.organizationName = new RegExp(search, 'i');
-    }
-
-    const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    const skip = (Number(page) - 1) * Number(limit);
+    if (search) filter.organizationName = new RegExp(search, 'i');
 
     const [assessments, total] = await Promise.all([
       Assessment.find(filter)
         .sort(sort)
         .skip(skip)
-        .limit(Number(limit))
+        .limit(limit)
         .populate('user', 'fullName email organizationName sectorCode')
         .lean(),
       Assessment.countDocuments(filter),
     ]);
 
-    res.json({
-      data: assessments,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit)),
-      },
-    });
+    res.json(paginatedResponse(assessments, total, page, limit));
   } catch (err) {
     next(err);
   }

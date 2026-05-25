@@ -1,14 +1,13 @@
 /**
  * Admin Auth Context — manages admin session separate from the regular user session.
  * Includes browser-level session isolation: blocks Admin Panel access when a
- * Main App (sam_token) session is already active in the same browser profile.
+ * Main App session is already active in the same browser profile.
  */
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { APP } from '../../constants/index.js';
 
-const ADMIN_TOKEN_KEY = 'ensogo_admin_token';
-const USER_TOKEN_KEY  = 'sam_token';
 const BASE = '/api/admin';
 
 const AdminAuthContext = createContext(null);
@@ -19,10 +18,10 @@ export function AdminAuthProvider({ children }) {
 
   // true when a Main App session is already active in this browser profile
   const [sessionConflict, setSessionConflict] = useState(
-    () => !!localStorage.getItem(USER_TOKEN_KEY)
+    () => !!localStorage.getItem(APP.STORAGE_KEY_TOKEN)
   );
 
-  const getToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
+  const getToken = () => localStorage.getItem(APP.STORAGE_KEY_ADMIN);
 
   const api = useCallback((config) => {
     const token = getToken();
@@ -39,8 +38,8 @@ export function AdminAuthProvider({ children }) {
   // Cross-tab detection: update conflict state if Main App logs in/out in another tab
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === USER_TOKEN_KEY || e.key === null) {
-        setSessionConflict(!!localStorage.getItem(USER_TOKEN_KEY));
+      if (e.key === APP.STORAGE_KEY_TOKEN || e.key === null) {
+        setSessionConflict(!!localStorage.getItem(APP.STORAGE_KEY_TOKEN));
       }
     };
     window.addEventListener('storage', handler);
@@ -49,7 +48,7 @@ export function AdminAuthProvider({ children }) {
 
   // Rehydrate on mount — skip if Main App session is active
   useEffect(() => {
-    if (localStorage.getItem(USER_TOKEN_KEY)) {
+    if (localStorage.getItem(APP.STORAGE_KEY_TOKEN)) {
       setLoading(false);
       return;
     }
@@ -57,33 +56,33 @@ export function AdminAuthProvider({ children }) {
     if (!token) { setLoading(false); return; }
     api({ method: 'GET', url: '/auth/me' })
       .then((res) => setAdmin(res.data.admin))
-      .catch(() => localStorage.removeItem(ADMIN_TOKEN_KEY))
+      .catch(() => localStorage.removeItem(APP.STORAGE_KEY_ADMIN))
       .finally(() => setLoading(false));
   }, [api]);
 
   const login = useCallback(async (email, password) => {
     // Hard block: cannot log into Admin while Main App session is live
-    if (localStorage.getItem(USER_TOKEN_KEY)) {
+    if (localStorage.getItem(APP.STORAGE_KEY_TOKEN)) {
       const err = new Error('SESSION_CONFLICT');
       err.isSessionConflict = true;
       throw err;
     }
     const res = await api({ method: 'POST', url: '/auth/login', data: { email, password } });
-    localStorage.setItem(ADMIN_TOKEN_KEY, res.data.token);
+    localStorage.setItem(APP.STORAGE_KEY_ADMIN, res.data.token);
     setAdmin(res.data.admin);
     return res.data.admin;
   }, [api]);
 
   const logout = useCallback(async () => {
     try { await api({ method: 'POST', url: '/auth/logout' }); } catch (_) { /* ignore */ }
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(APP.STORAGE_KEY_ADMIN);
     setAdmin(null);
   }, [api]);
 
   // Clears the conflicting Main App session so Admin Panel can be used
   const clearUserSession = useCallback(() => {
-    localStorage.removeItem(USER_TOKEN_KEY);
-    localStorage.removeItem('sam_user');
+    localStorage.removeItem(APP.STORAGE_KEY_TOKEN);
+    localStorage.removeItem(APP.STORAGE_KEY_USER);
     setSessionConflict(false);
   }, []);
 

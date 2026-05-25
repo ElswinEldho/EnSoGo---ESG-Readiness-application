@@ -2,7 +2,7 @@
 // Loads the centralised root .env, spins up Express, connects MongoDB,
 // and mounts the route tree.
 
-// ── Environment ──────────────────────────────────────────────────────────────
+// -- Environment -------------------------------------------------------------
 // Must be the very first require so every module that follows sees process.env
 // populated from the root .env file.
 const path = require('path');
@@ -33,14 +33,24 @@ const app = express();
 
 // --- core middleware --------------------------------------------------------
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
+
+// CORS_ORIGIN may be a comma-separated list of allowed origins (e.g. localhost + network IP).
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 }
 
-// Global rate-limit — extra protection on auth handled inside the route file.
+// Global rate-limit -- extra protection on auth handled inside the route file.
 app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 
 // --- routes -----------------------------------------------------------------
@@ -59,9 +69,10 @@ app.use(errorHandler);
 async function start() {
   await connectDB();
   const port = process.env.PORT || 5000;
+  const env = process.env.NODE_ENV || 'development';
   app.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`[sam] backend listening on http://localhost:${port} (${process.env.NODE_ENV || 'development'})`);
+    console.log('[sam] backend listening on http://localhost:' + port + ' (' + env + ')');
   });
 }
 

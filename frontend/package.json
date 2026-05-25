@@ -4,8 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server.js",
+    "dev:vite": "vite",
     "build": "vite build",
+    "serve": "node server.js --prod",
     "preview": "vite preview --port 5173"
   },
   "dependencies": {

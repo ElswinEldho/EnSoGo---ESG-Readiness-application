@@ -46,6 +46,17 @@ export const VALIDATION_MESSAGES = Object.freeze({
   HOURS_REQUIRED:        'Operating hours per day is required.',
 });
 
+// ── Date formatting ───────────────────────────────────────────────────────────
+/**
+ * Format a date value for display using the Indian locale.
+ * Returns '—' for null/undefined/falsy values.
+ * Default format: "3 Jan 2025"  (day numeric, month short, year numeric)
+ */
+export function formatDate(value, opts = { day: 'numeric', month: 'short', year: 'numeric' }) {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('en-IN', opts);
+}
+
 // ── App meta ──────────────────────────────────────────────────────────────────
 export const APP = Object.freeze({
   NAME:    'EnSoGo',

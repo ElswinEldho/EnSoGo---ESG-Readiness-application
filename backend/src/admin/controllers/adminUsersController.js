@@ -3,20 +3,15 @@
  */
 
 const AdminUser = require('../models/AdminUser');
-const { createAuditEntry } = require('../middleware/adminLogger');
 const { ADMIN_ROLES } = require('../models/AdminUser');
+const { createAuditEntry }               = require('../middleware/adminLogger');
+const { parsePaginationParams, paginatedResponse } = require('../utils/pagination');
 
 // GET /api/admin/admin-users
 async function listAdminUsers(req, res, next) {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      search = '',
-      role,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = req.query;
+    const { search = '', role } = req.query;
+    const { page, limit, skip, sort } = parsePaginationParams(req.query);
 
     const filter = {};
     if (search) {
@@ -25,26 +20,15 @@ async function listAdminUsers(req, res, next) {
     }
     if (role && ADMIN_ROLES.includes(role)) filter.role = role;
 
-    const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    const skip = (Number(page) - 1) * Number(limit);
-
     const [admins, total] = await Promise.all([
-      AdminUser.find(filter).sort(sort).skip(skip).limit(Number(limit)).lean(),
+      AdminUser.find(filter).sort(sort).skip(skip).limit(limit).lean(),
       AdminUser.countDocuments(filter),
     ]);
 
     // Remove password hashes from list
     const safeAdmins = admins.map(({ passwordHash, ...rest }) => rest);
 
-    res.json({
-      data: safeAdmins,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit)),
-      },
-    });
+    res.json(paginatedResponse(safeAdmins, total, page, limit));
   } catch (err) {
     next(err);
   }
@@ -72,9 +56,9 @@ async function createAdminUser(req, res, next) {
 
     const admin = new AdminUser({
       fullName: fullName.trim(),
-      email: email.toLowerCase().trim(),
+      email:    email.toLowerCase().trim(),
       role,
-      notes: notes || '',
+      notes:     notes || '',
       createdBy: req.adminUser._id,
     });
     await admin.setPassword(password);
@@ -123,9 +107,7 @@ async function updateAdminUser(req, res, next) {
     }
     if (req.body.isActive !== undefined) admin.isActive = Boolean(req.body.isActive);
     if (req.body.notes !== undefined) admin.notes = req.body.notes;
-    if (req.body.password) {
-      await admin.setPassword(req.body.password);
-    }
+    if (req.body.password) await admin.setPassword(req.body.password);
     await admin.save();
 
     await createAuditEntry({

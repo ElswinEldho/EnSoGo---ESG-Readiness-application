@@ -20,6 +20,12 @@ npm-debug.log*
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+# ── Frontend HTML entry ───────────────────────────────────────────────────────
+# index.html is not used by the application — HTML is generated at runtime by
+# html-template.js (dev: transformIndexHtml; build: generateBundle emits dist/index.html).
+# The file is kept empty on disk so the path remains gitignored.
+frontend/index.html
+
 # ── Editor / OS artefacts ─────────────────────────────────────────────────────
 .DS_Store
 .vscode/

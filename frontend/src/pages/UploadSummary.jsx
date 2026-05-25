@@ -15,6 +15,7 @@ import { useEffect, useState, useRef, memo, lazy, Suspense } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { formatDate } from '../constants/index.js';
 // Lazy-load HospitalKpiDashboard — it is only needed for HOSP-sector users and
 // adds ~107 KiB to the bundle.  Loading it on-demand keeps the initial chunk lean.
 const HospitalKpiDashboard = lazy(() => import('../components/HospitalKpiDashboard.jsx'));
@@ -262,7 +263,7 @@ export default function UploadSummary() {
           </div>
           <div className="ml-auto text-right">
             <div className="text-[12px] font-semibold text-slate-700">Upload Summary &amp; Calculations</div>
-            <div className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div className="text-[10px] text-slate-400">{formatDate(new Date(), { day: '2-digit', month: 'short', year: 'numeric' })}</div>
           </div>
         </div>
 

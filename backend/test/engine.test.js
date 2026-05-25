@@ -2,14 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { countMonthsUploaded, categoryCompletenessPct, overallCompletenessPct } = require('../src/engine/completeness');
-const { confidenceFor } = require('../src/engine/confidence');
-const { annualize } = require('../src/engine/annualization');
-const { runAllChecks } = require('../src/engine/validation');
-const { computeScope1, computeScope2, computeScope3, computeTotal } = require('../src/engine/emissions');
-const { scoreCategory, scoreAll } = require('../src/engine/scoring');
-const { scoreFramework } = require('../src/engine/certification');
-const { generateStrengths, generateGaps } = require('../src/engine/strengthsGaps');
+const { countMonthsUploaded, categoryCompletenessPct, overallCompletenessPct } = require('../src/utils/engine/completeness');
+const { confidenceFor } = require('../src/utils/engine/confidence');
+const { annualize } = require('../src/utils/engine/annualization');
+const { runAllChecks } = require('../src/utils/engine/validation');
+const { computeScope1, computeScope2, computeScope3, computeTotal } = require('../src/utils/engine/emissions');
+const { scoreCategory, scoreAll } = require('../src/utils/engine/scoring');
+const { scoreFramework } = require('../src/utils/engine/certification');
+const { generateStrengths, generateGaps } = require('../src/utils/engine/strengthsGaps');
 
 // --- BRD §5.1: 7 months ÷ 12 = 58.3% ---
 test('completeness — 7 months → 58.3%', () => {
